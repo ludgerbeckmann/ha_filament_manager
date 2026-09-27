@@ -82,21 +82,33 @@ async def test_consume_more_than_remaining_clamps_to_zero(hass: HomeAssistant) -
     assert float(hass.states.get(PERCENT_ENTITY).state) == 0.0
 
 
-async def test_config_flow_creates_entry(hass: HomeAssistant) -> None:
+def _schema_default(schema, key_name: str):
+    for key in schema.schema:
+        if str(key) == key_name:
+            return key.default() if callable(key.default) else key.default
+    raise KeyError(key_name)
+
+
+async def test_config_flow_suggests_name_and_creates_entry(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     assert result["type"] == "form"
+    assert result["step_id"] == "user"
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {
-            "name": "New Spool",
             CONF_MATERIAL: "PETG",
             CONF_COLOR: "Rot",
-            "manufacturer": "",
+            "manufacturer": "Prusament",
             CONF_DIAMETER: "1.75",
             CONF_TOTAL_WEIGHT: 1000,
         },
     )
+    assert result["type"] == "form"
+    assert result["step_id"] == "name"
+    assert _schema_default(result["data_schema"], "name") == "Prusament PETG Rot"
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "New Spool"})
     assert result["type"] == "create_entry"
     assert result["title"] == "New Spool"
     assert result["options"][CONF_INITIAL_REMAINING_WEIGHT] == 1000

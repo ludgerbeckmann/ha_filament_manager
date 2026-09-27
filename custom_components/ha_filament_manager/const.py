@@ -32,6 +32,41 @@ MATERIAL_OPTIONS: Final[list[str]] = [
     "Sonstiges",
 ]
 
+COLOR_OPTIONS: Final[list[str]] = [
+    "Schwarz",
+    "Weiß",
+    "Grau",
+    "Silber",
+    "Rot",
+    "Blau",
+    "Grün",
+    "Gelb",
+    "Orange",
+    "Lila",
+    "Pink",
+    "Braun",
+    "Transparent",
+    "Gold",
+    "Sonstige",
+]
+
+MANUFACTURER_OPTIONS: Final[list[str]] = [
+    "Prusament",
+    "Bambu Lab",
+    "eSUN",
+    "SUNLU",
+    "Polymaker",
+    "Overture",
+    "Devil Design",
+    "Extrudr",
+    "Fillamentum",
+    "Formfutura",
+    "ColorFabb",
+    "3DJake",
+    "Das Filament",
+    "Sonstiges",
+]
+
 DIAMETER_OPTIONS: Final[list[dict[str, str]]] = [
     {"value": "1.75", "label": "1.75 mm"},
     {"value": "2.85", "label": "2.85 mm"},

@@ -5,7 +5,6 @@
         "title": "Filamentspule hinzufügen",
         "description": "Gib die Eigenschaften der Spule ein, die du verwalten möchtest.",
         "data": {
-          "name": "Name",
           "material": "Material",
           "color": "Farbe",
           "manufacturer": "Hersteller",
@@ -14,6 +13,13 @@
           "initial_remaining_weight": "Aktuelle Restmenge",
           "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
           "humidity_max": "Maximale Luftfeuchtigkeit"
+        }
+      },
+      "name": {
+        "title": "Spule benennen",
+        "description": "Vorschlag basierend auf Material, Farbe und Hersteller - kann beliebig angepasst werden.",
+        "data": {
+          "name": "Name"
         }
       }
     },

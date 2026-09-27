@@ -44,11 +44,16 @@ Jede **Spule** wird als eigene Instanz der Integration angelegt:
 
 1. *Einstellungen → Geräte & Dienste → Integration hinzufügen* → nach
    "Filament Manager" suchen.
-2. Name, Material, Farbe, Hersteller, Durchmesser sowie Gesamtgewicht und
-   (falls schon angebrochen) aktuelle Restmenge eintragen.
+2. Material, Farbe (beides Dropdowns mit gängigen Werten, aber frei
+   überschreibbar) sowie optional Hersteller (ebenfalls Dropdown mit
+   bekannten Marken), Durchmesser, Gesamtgewicht und (falls schon
+   angebrochen) aktuelle Restmenge eintragen.
 3. Optional einen Luftfeuchtigkeitssensor und einen Grenzwert (Standard 40 %)
    hinterlegen.
-4. Für eine weitere Spule den Vorgang wiederholen ("+ Integration
+4. Im letzten Schritt einen Namen vergeben – vorbelegt mit einem Vorschlag
+   aus Hersteller, Material und Farbe (z. B. "Prusament PETG Rot"), kann
+   aber beliebig angepasst werden.
+5. Für eine weitere Spule den Vorgang wiederholen ("+ Integration
    hinzufügen" → erneut "Filament Manager" wählen).
 
 Bestehende Spulen lassen sich über das Zahnrad-Symbol des jeweiligen
