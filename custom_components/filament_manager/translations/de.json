@@ -1,0 +1,94 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Filamentspule hinzufügen",
+        "description": "Gib die Eigenschaften der Spule ein, die du verwalten möchtest.",
+        "data": {
+          "name": "Name",
+          "material": "Material",
+          "color": "Farbe",
+          "manufacturer": "Hersteller",
+          "diameter": "Durchmesser",
+          "total_weight": "Gesamtgewicht (neue Spule)",
+          "initial_remaining_weight": "Aktuelle Restmenge",
+          "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
+          "humidity_max": "Maximale Luftfeuchtigkeit"
+        }
+      }
+    },
+    "error": {
+      "name_required": "Bitte gib einen Namen für die Spule ein.",
+      "remaining_exceeds_total": "Die Restmenge darf nicht größer als das Gesamtgewicht sein."
+    },
+    "abort": {
+      "already_configured": "Diese Spule ist bereits konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Spule bearbeiten",
+        "description": "Aktualisiere die Eigenschaften der Spule. Die Restmenge änderst du über die entsprechende Entität oder die Dienste consume_filament / refill_spool.",
+        "data": {
+          "name": "Name",
+          "material": "Material",
+          "color": "Farbe",
+          "manufacturer": "Hersteller",
+          "diameter": "Durchmesser",
+          "total_weight": "Gesamtgewicht (neue Spule)",
+          "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
+          "humidity_max": "Maximale Luftfeuchtigkeit"
+        }
+      }
+    },
+    "error": {
+      "name_required": "Bitte gib einen Namen für die Spule ein."
+    }
+  },
+  "entity": {
+    "number": {
+      "remaining_weight": {
+        "name": "Restmenge"
+      }
+    },
+    "sensor": {
+      "remaining_percentage": {
+        "name": "Füllstand"
+      },
+      "material": {
+        "name": "Material"
+      },
+      "color": {
+        "name": "Farbe"
+      }
+    },
+    "binary_sensor": {
+      "humidity_alert": {
+        "name": "Luftfeuchtigkeitswarnung"
+      }
+    }
+  },
+  "services": {
+    "consume_filament": {
+      "name": "Filament verbrauchen",
+      "description": "Reduziert die Restmenge einer Spule um den angegebenen Betrag.",
+      "fields": {
+        "amount": {
+          "name": "Menge",
+          "description": "Verbrauchte Filamentmenge in Gramm."
+        }
+      }
+    },
+    "refill_spool": {
+      "name": "Spule auffüllen",
+      "description": "Setzt die Restmenge einer Spule zurück, z. B. beim Einlegen einer neuen Spule.",
+      "fields": {
+        "amount": {
+          "name": "Menge",
+          "description": "Neue Restmenge in Gramm. Wenn leer, wird auf das Gesamtgewicht zurückgesetzt."
+        }
+      }
+    }
+  }
+}
