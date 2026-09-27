@@ -1,5 +1,10 @@
 # Filament Manager
 
+[![Validate](https://github.com/ludgerbeckmann/ha_filament_manager/actions/workflows/validate.yml/badge.svg)](https://github.com/ludgerbeckmann/ha_filament_manager/actions/workflows/validate.yml)
+[![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+[![GitHub release](https://img.shields.io/github/release/ludgerbeckmann/ha_filament_manager.svg)](https://github.com/ludgerbeckmann/ha_filament_manager/releases/)
+[![GitHub license](https://img.shields.io/github/license/ludgerbeckmann/ha_filament_manager.svg)](https://github.com/ludgerbeckmann/ha_filament_manager/blob/main/LICENSE)
+
 HA Integration zur Verwaltung des eigenen 3D-Druck-Filamentbestandes –
 inspiriert von [Spoolman](https://github.com/Donkie/Spoolman), aber als
 schlanke, native Home-Assistant-Integration ohne externen Server.
