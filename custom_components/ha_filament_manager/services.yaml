@@ -2,7 +2,7 @@ consume_filament:
   target:
     entity:
       domain: number
-      integration: filament_manager
+      integration: ha_filament_manager
   fields:
     amount:
       required: true
@@ -18,7 +18,7 @@ refill_spool:
   target:
     entity:
       domain: number
-      integration: filament_manager
+      integration: ha_filament_manager
   fields:
     amount:
       required: false

@@ -1,5 +1,5 @@
 {
-  "domain": "filament_manager",
+  "domain": "ha_filament_manager",
   "name": "Filament Manager",
   "codeowners": ["@ludgerbeckmann"],
   "config_flow": true,
