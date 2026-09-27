@@ -19,9 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # "topics" (GitHub repo topics) and "brands" (home-assistant/brands
+      # submission) are only required for inclusion in the default HACS
+      # store. This repo is meant to be added as a custom HACS repository
+      # (see README), which works without either, and neither is fixable
+      # from a code push.
       - uses: hacs/action@main
         with:
           category: integration
+          ignore: topics brands
 
   pytest:
     runs-on: ubuntu-latest
