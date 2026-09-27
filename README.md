@@ -1,2 +1,84 @@
-# ha_filament_manager
-HA Integration zur Verwaltung des eigenen 3D Druck Filamentbestandes
+# Filament Manager
+
+HA Integration zur Verwaltung des eigenen 3D-Druck-Filamentbestandes –
+inspiriert von [Spoolman](https://github.com/Donkie/Spoolman), aber als
+schlanke, native Home-Assistant-Integration ohne externen Server.
+
+## Funktionen
+
+- Jede Filamentspule wird als eigenes Gerät angelegt, mit **Name, Material,
+  Farbe, Hersteller, Durchmesser** und **Gesamt-/Restgewicht**.
+- Die Restmenge lässt sich direkt im Dashboard anpassen (editierbare
+  `number`-Entität) oder per Service aktualisieren.
+- Ein Sensor zeigt den **Füllstand in Prozent** – ideal für
+  Balken-/Glance-Karten auf dem Dashboard.
+- Optional kann pro Spule ein vorhandener **Luftfeuchtigkeitssensor**
+  hinterlegt werden (z. B. ein Hygrometer in der Trockenbox). Überschreitet
+  die gemessene Luftfeuchtigkeit den konfigurierten Grenzwert, schaltet ein
+  `binary_sensor` auf "Warnung".
+
+## Installation
+
+### Über HACS (empfohlen)
+
+1. HACS öffnen → *Integrationen* → Menü (⋮) → *Benutzerdefinierte
+   Repositories*.
+2. Dieses Repository (`ludgerbeckmann/ha_filament_manager`) als Kategorie
+   *Integration* hinzufügen.
+3. "Filament Manager" installieren und Home Assistant neu starten.
+
+### Manuell
+
+Den Ordner `custom_components/filament_manager` in das
+`custom_components`-Verzeichnis deiner Home-Assistant-Installation kopieren
+und Home Assistant neu starten.
+
+## Einrichtung
+
+Jede **Spule** wird als eigene Instanz der Integration angelegt:
+
+1. *Einstellungen → Geräte & Dienste → Integration hinzufügen* → nach
+   "Filament Manager" suchen.
+2. Name, Material, Farbe, Hersteller, Durchmesser sowie Gesamtgewicht und
+   (falls schon angebrochen) aktuelle Restmenge eintragen.
+3. Optional einen Luftfeuchtigkeitssensor und einen Grenzwert (Standard 40 %)
+   hinterlegen.
+4. Für eine weitere Spule den Vorgang wiederholen ("+ Integration
+   hinzufügen" → erneut "Filament Manager" wählen).
+
+Bestehende Spulen lassen sich über das Zahnrad-Symbol des jeweiligen
+Eintrags bearbeiten (Material, Farbe, Gesamtgewicht, Luftfeuchtigkeitssensor
+usw.). Die Restmenge wird dort bewusst nicht verändert – dafür gibt es die
+`number`-Entität und die Dienste unten.
+
+## Entitäten pro Spule
+
+| Entität | Beschreibung |
+| --- | --- |
+| `number.<spule>_remaining_weight` | Restmenge in Gramm, direkt editierbar |
+| `sensor.<spule>_remaining_percentage` | Füllstand in % |
+| `sensor.<spule>_material` | Materialtyp (z. B. PLA, PETG) |
+| `sensor.<spule>_color` | Farbe |
+| `binary_sensor.<spule>_humidity_alert` | Nur vorhanden, wenn ein Luftfeuchtigkeitssensor hinterlegt wurde |
+
+## Dienste
+
+- `filament_manager.consume_filament` – reduziert die Restmenge einer Spule
+  (Feld `amount` in Gramm). Praktisch für Automationen, die nach jedem Druck
+  automatisch die verbrauchte Menge abziehen.
+- `filament_manager.refill_spool` – setzt die Restmenge zurück (Feld
+  `amount`, ohne Angabe wird auf das Gesamtgewicht zurückgesetzt) – z. B.
+  beim Einlegen einer neuen Spule.
+
+## Beispiel-Dashboard-Karte
+
+```yaml
+type: entities
+title: PLA Galaxy Black
+entities:
+  - entity: number.pla_galaxy_black_remaining_weight
+  - entity: sensor.pla_galaxy_black_remaining_percentage
+  - entity: sensor.pla_galaxy_black_material
+  - entity: sensor.pla_galaxy_black_color
+  - entity: binary_sensor.pla_galaxy_black_humidity_alert
+```

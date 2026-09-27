@@ -1,0 +1,94 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a filament spool",
+        "description": "Enter the details of the spool you want to track.",
+        "data": {
+          "name": "Name",
+          "material": "Material",
+          "color": "Color",
+          "manufacturer": "Manufacturer",
+          "diameter": "Diameter",
+          "total_weight": "Total weight (new spool)",
+          "initial_remaining_weight": "Current remaining weight",
+          "humidity_sensor": "Humidity sensor (optional)",
+          "humidity_max": "Maximum humidity"
+        }
+      }
+    },
+    "error": {
+      "name_required": "Please enter a name for the spool.",
+      "remaining_exceeds_total": "The remaining weight cannot be greater than the total weight."
+    },
+    "abort": {
+      "already_configured": "This spool is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit spool",
+        "description": "Update the spool's details. Use the remaining-weight entity or the consume_filament / refill_spool services to change how much filament is left.",
+        "data": {
+          "name": "Name",
+          "material": "Material",
+          "color": "Color",
+          "manufacturer": "Manufacturer",
+          "diameter": "Diameter",
+          "total_weight": "Total weight (new spool)",
+          "humidity_sensor": "Humidity sensor (optional)",
+          "humidity_max": "Maximum humidity"
+        }
+      }
+    },
+    "error": {
+      "name_required": "Please enter a name for the spool."
+    }
+  },
+  "entity": {
+    "number": {
+      "remaining_weight": {
+        "name": "Remaining weight"
+      }
+    },
+    "sensor": {
+      "remaining_percentage": {
+        "name": "Remaining"
+      },
+      "material": {
+        "name": "Material"
+      },
+      "color": {
+        "name": "Color"
+      }
+    },
+    "binary_sensor": {
+      "humidity_alert": {
+        "name": "Humidity alert"
+      }
+    }
+  },
+  "services": {
+    "consume_filament": {
+      "name": "Consume filament",
+      "description": "Reduces a spool's remaining weight by the given amount.",
+      "fields": {
+        "amount": {
+          "name": "Amount",
+          "description": "Amount of filament used, in grams."
+        }
+      }
+    },
+    "refill_spool": {
+      "name": "Refill spool",
+      "description": "Resets a spool's remaining weight, e.g. after mounting a fresh one.",
+      "fields": {
+        "amount": {
+          "name": "Amount",
+          "description": "New remaining weight in grams. If left empty, the spool is reset to its total weight."
+        }
+      }
+    }
+  }
+}
