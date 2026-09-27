@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Final
 
-DOMAIN: Final = "filament_manager"
+DOMAIN: Final = "ha_filament_manager"
 
 CONF_NAME: Final = "name"
 CONF_MATERIAL: Final = "material"

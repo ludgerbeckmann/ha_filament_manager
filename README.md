@@ -29,7 +29,7 @@ schlanke, native Home-Assistant-Integration ohne externen Server.
 
 ### Manuell
 
-Den Ordner `custom_components/filament_manager` in das
+Den Ordner `custom_components/ha_filament_manager` in das
 `custom_components`-Verzeichnis deiner Home-Assistant-Installation kopieren
 und Home Assistant neu starten.
 
@@ -63,10 +63,10 @@ usw.). Die Restmenge wird dort bewusst nicht verändert – dafür gibt es die
 
 ## Dienste
 
-- `filament_manager.consume_filament` – reduziert die Restmenge einer Spule
+- `ha_filament_manager.consume_filament` – reduziert die Restmenge einer Spule
   (Feld `amount` in Gramm). Praktisch für Automationen, die nach jedem Druck
   automatisch die verbrauchte Menge abziehen.
-- `filament_manager.refill_spool` – setzt die Restmenge zurück (Feld
+- `ha_filament_manager.refill_spool` – setzt die Restmenge zurück (Feld
   `amount`, ohne Angabe wird auf das Gesamtgewicht zurückgesetzt) – z. B.
   beim Einlegen einer neuen Spule.
 

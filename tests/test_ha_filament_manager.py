@@ -1,7 +1,7 @@
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.filament_manager.const import (
+from custom_components.ha_filament_manager.const import (
     CONF_COLOR,
     CONF_DIAMETER,
     CONF_HUMIDITY_MAX,
