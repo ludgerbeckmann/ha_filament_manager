@@ -17,6 +17,18 @@ CONF_HUMIDITY_MAX: Final = "humidity_max"
 CONF_LOW_STOCK_THRESHOLD: Final = "low_stock_threshold"
 CONF_NOTIFY_TARGETS: Final = "notify_targets"
 CONF_PERSISTENT_NOTIFICATION: Final = "persistent_notification"
+CONF_BOX: Final = "box_entry_id"
+
+# Stored in a config entry's `data` (fixed at creation, unlike `options`) to
+# tell a filament box entry apart from a spool entry - both are instances of
+# the same integration/config flow.
+CONF_ENTRY_TYPE: Final = "entry_type"
+ENTRY_TYPE_SPOOL: Final = "spool"
+ENTRY_TYPE_BOX: Final = "box"
+
+# Physical constraint of the filament dry boxes this grouping models: each
+# one holds at most four spools.
+MAX_SPOOLS_PER_BOX: Final = 4
 
 DEFAULT_TOTAL_WEIGHT: Final = 1000
 DEFAULT_HUMIDITY_MAX: Final = 40
@@ -121,7 +133,7 @@ CARD_FILENAME: Final = "filament-manager-card.js"
 CARD_URL_PATH: Final = f"/{DOMAIN}_files/{CARD_FILENAME}"
 # Bump whenever the card's JS changes, to bust browser caching of the
 # static file (independent of the integration's own manifest version).
-CARD_VERSION: Final = "5"
+CARD_VERSION: Final = "6"
 
 
 def signal_spool_updated(entry_id: str) -> str:

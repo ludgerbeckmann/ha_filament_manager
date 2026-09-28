@@ -2,6 +2,14 @@
   "config": {
     "step": {
       "user": {
+        "title": "Add to Filament Manager",
+        "description": "What would you like to add?",
+        "menu_options": {
+          "spool": "A filament spool",
+          "box": "A filament box (groups up to 4 spools, e.g. a dry box)"
+        }
+      },
+      "spool": {
         "title": "Add a filament spool",
         "description": "What kind of spool is it?",
         "data": {
@@ -17,7 +25,8 @@
           "diameter": "Diameter",
           "total_weight": "Total weight (new spool)",
           "initial_remaining_weight": "Current remaining weight",
-          "humidity_sensor": "Humidity sensor (optional)",
+          "box_entry_id": "Filament box (optional)",
+          "humidity_sensor": "Humidity sensor (optional, ignored if a filament box is selected above)",
           "humidity_max": "Maximum humidity",
           "low_stock_threshold": "Low stock warning below (optional, e.g. 15)",
           "notify_targets": "Notify (optional)",
@@ -30,11 +39,23 @@
         "data": {
           "name": "Name"
         }
+      },
+      "box": {
+        "title": "Add a filament box",
+        "description": "A filament box groups up to 4 spools (e.g. a dry box) and can carry a single shared humidity sensor for all of them.",
+        "data": {
+          "name": "Name",
+          "humidity_sensor": "Humidity sensor (optional)",
+          "humidity_max": "Maximum humidity",
+          "notify_targets": "Notify (optional)",
+          "persistent_notification": "Also show a persistent notification"
+        }
       }
     },
     "error": {
-      "name_required": "Please enter a name for the spool.",
-      "remaining_exceeds_total": "The remaining weight cannot be greater than the total weight."
+      "name_required": "Please enter a name.",
+      "remaining_exceeds_total": "The remaining weight cannot be greater than the total weight.",
+      "box_full": "This filament box is already full (max. 4 spools)."
     },
     "abort": {
       "already_configured": "This spool is already configured."
@@ -52,16 +73,29 @@
           "manufacturer": "Manufacturer",
           "diameter": "Diameter",
           "total_weight": "Total weight (new spool)",
-          "humidity_sensor": "Humidity sensor (optional)",
+          "box_entry_id": "Filament box (optional)",
+          "humidity_sensor": "Humidity sensor (optional, ignored if a filament box is selected above)",
           "humidity_max": "Maximum humidity",
           "low_stock_threshold": "Low stock warning below (optional, e.g. 15)",
+          "notify_targets": "Notify (optional)",
+          "persistent_notification": "Also show a persistent notification"
+        }
+      },
+      "edit_box": {
+        "title": "Edit filament box",
+        "description": "Update the box's name and humidity settings.",
+        "data": {
+          "name": "Name",
+          "humidity_sensor": "Humidity sensor (optional)",
+          "humidity_max": "Maximum humidity",
           "notify_targets": "Notify (optional)",
           "persistent_notification": "Also show a persistent notification"
         }
       }
     },
     "error": {
-      "name_required": "Please enter a name for the spool."
+      "name_required": "Please enter a name.",
+      "box_full": "This filament box is already full (max. 4 spools)."
     }
   },
   "entity": {

@@ -4,6 +4,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_filament_manager.const import (
     CARD_URL_PATH,
+    CONF_BOX,
     CONF_COLOR,
     CONF_DIAMETER,
     CONF_HUMIDITY_MAX,
@@ -11,6 +12,7 @@ from custom_components.ha_filament_manager.const import (
     CONF_INITIAL_REMAINING_WEIGHT,
     CONF_LOW_STOCK_THRESHOLD,
     CONF_MATERIAL,
+    CONF_NAME,
     CONF_NOTIFY_TARGETS,
     CONF_PERSISTENT_NOTIFICATION,
     CONF_TOTAL_WEIGHT,
@@ -94,10 +96,34 @@ def _schema_default(schema, key_name: str):
     raise KeyError(key_name)
 
 
-async def test_config_flow_suggests_name_and_creates_entry(hass: HomeAssistant) -> None:
+async def _start_spool_flow(hass: HomeAssistant):
+    """Init the config flow and navigate the entry menu to the spool step."""
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-    assert result["type"] == "form"
+    assert result["type"] == "menu"
     assert result["step_id"] == "user"
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "spool"})
+    assert result["type"] == "form"
+    assert result["step_id"] == "spool"
+    return result
+
+
+async def _add_box(hass: HomeAssistant, **extra_options) -> MockConfigEntry:
+    """Create a filament box config entry via the config flow."""
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "box"})
+    assert result["step_id"] == "box"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_NAME: "Dry Box 1", **extra_options}
+    )
+    assert result["type"] == "create_entry"
+    await hass.async_block_till_done()
+    return result["result"]
+
+
+async def test_config_flow_suggests_name_and_creates_entry(hass: HomeAssistant) -> None:
+    result = await _start_spool_flow(hass)
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -124,7 +150,7 @@ async def test_config_flow_suggests_name_and_creates_entry(hass: HomeAssistant) 
 
 
 async def test_config_flow_suggests_total_weight_from_material(hass: HomeAssistant) -> None:
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await _start_spool_flow(hass)
 
     # TPU has no manufacturer-specific entry, but a material-only default of
     # 500g (common industry convention for flexible filaments).
@@ -136,7 +162,7 @@ async def test_config_flow_suggests_total_weight_from_material(hass: HomeAssista
     assert _schema_default(result["data_schema"], CONF_TOTAL_WEIGHT) == 500
 
     # An unknown material falls back to the generic default.
-    result2 = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result2 = await _start_spool_flow(hass)
     result2 = await hass.config_entries.flow.async_configure(
         result2["flow_id"],
         {CONF_MATERIAL: "PLA", CONF_COLOR: "Schwarz", "manufacturer": ""},
@@ -277,3 +303,70 @@ async def test_overview_card_is_served_and_registered(hass: HomeAssistant, hass_
     assert resp.status == 200
     body = await resp.text()
     assert "customElements.define(\"filament-manager-card\"" in body
+
+
+async def test_box_creates_humidity_alert(hass: HomeAssistant) -> None:
+    hass.states.async_set("sensor.box_humidity", "30")
+    await hass.async_block_till_done()
+
+    box = await _add_box(hass, **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity", CONF_HUMIDITY_MAX: 40})
+
+    alert_entity = "binary_sensor.dry_box_1_humidity_alert"
+    assert hass.states.get(alert_entity).state == "off"
+
+    hass.states.async_set("sensor.box_humidity", "55")
+    await hass.async_block_till_done()
+    assert hass.states.get(alert_entity).state == "on"
+
+    # A box has no remaining weight, material or color - only its shared
+    # humidity alert.
+    assert hass.states.get("number.dry_box_1_remaining_weight") is None
+    assert box.data == {"entry_type": "box"}
+
+
+async def test_spool_in_box_uses_box_humidity_not_its_own(hass: HomeAssistant) -> None:
+    box = await _add_box(hass, **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity"})
+
+    hass.states.async_set("sensor.spool_own_humidity", "10")
+    await hass.async_block_till_done()
+
+    spool_entry = await _setup_entry(
+        hass,
+        **{
+            CONF_BOX: box.entry_id,
+            CONF_HUMIDITY_SENSOR: "sensor.spool_own_humidity",
+            CONF_HUMIDITY_MAX: 40,
+        },
+    )
+
+    # The box overrides a spool's own humidity sensor once assigned to it.
+    assert hass.states.get("binary_sensor.test_spool_humidity_alert") is None
+
+    from homeassistant.helpers import device_registry as dr
+
+    device_registry = dr.async_get(hass)
+    spool_device = device_registry.async_get_device(identifiers={(DOMAIN, spool_entry.entry_id)})
+    box_device = device_registry.async_get_device(identifiers={(DOMAIN, box.entry_id)})
+    assert spool_device is not None
+    assert box_device is not None
+    assert spool_device.via_device_id == box_device.id
+
+
+async def test_box_full_rejects_a_fifth_spool(hass: HomeAssistant) -> None:
+    box = await _add_box(hass)
+
+    for i in range(4):
+        await _setup_entry(hass, **{CONF_BOX: box.entry_id})
+
+    result = await _start_spool_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_MATERIAL: "PLA", CONF_COLOR: "Schwarz", "manufacturer": ""},
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_DIAMETER: "1.75", CONF_TOTAL_WEIGHT: 1000, CONF_BOX: box.entry_id},
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "details"
+    assert result["errors"]["base"] == "box_full"

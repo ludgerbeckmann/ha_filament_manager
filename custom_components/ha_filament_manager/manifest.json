@@ -9,5 +9,5 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/ludgerbeckmann/ha_filament_manager/issues",
   "requirements": [],
-  "version": "0.5.1"
+  "version": "0.6.0"
 }
