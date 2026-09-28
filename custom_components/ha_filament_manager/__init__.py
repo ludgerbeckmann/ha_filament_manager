@@ -8,12 +8,22 @@ without re-deriving it from entity state lookups.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_INITIAL_REMAINING_WEIGHT, CONF_TOTAL_WEIGHT
+from .const import (
+    CARD_FILENAME,
+    CARD_URL_PATH,
+    CARD_VERSION,
+    CONF_INITIAL_REMAINING_WEIGHT,
+    CONF_TOTAL_WEIGHT,
+)
 
 PLATFORMS: list[Platform] = [Platform.NUMBER, Platform.SENSOR, Platform.BINARY_SENSOR]
 
@@ -23,6 +33,20 @@ class SpoolRuntimeData:
     """Live, mutable state for a single spool."""
 
     remaining_weight: float
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Serve the bundled Lovelace overview card and register it with the frontend.
+
+    Runs once for the whole integration (unlike async_setup_entry, which runs
+    per spool), so the card is available even before any spool is configured.
+    """
+    card_path = Path(__file__).parent / "www" / CARD_FILENAME
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(CARD_URL_PATH, str(card_path), cache_headers=True)]
+    )
+    add_extra_js_url(hass, f"{CARD_URL_PATH}?v={CARD_VERSION}")
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

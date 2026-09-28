@@ -1,7 +1,9 @@
 from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_filament_manager.const import (
+    CARD_URL_PATH,
     CONF_COLOR,
     CONF_DIAMETER,
     CONF_HUMIDITY_MAX,
@@ -160,3 +162,19 @@ async def test_humidity_alert_tracks_source_sensor(hass: HomeAssistant) -> None:
     state = hass.states.get(alert_entity)
     assert state.state == "on"
     assert state.attributes["current_humidity"] == 55.0
+
+
+async def test_overview_card_is_served_and_registered(hass: HomeAssistant, hass_client) -> None:
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
+
+    registered = hass.data[DATA_EXTRA_MODULE_URL]
+    assert any(url.startswith(CARD_URL_PATH) for url in registered.urls)
+
+    client = await hass_client()
+    resp = await client.get(CARD_URL_PATH)
+    assert resp.status == 200
+    body = await resp.text()
+    assert "customElements.define(\"filament-manager-card\"" in body

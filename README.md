@@ -21,6 +21,9 @@ schlanke, native Home-Assistant-Integration ohne externen Server.
   hinterlegt werden (z. B. ein Hygrometer in der Trockenbox). Überschreitet
   die gemessene Luftfeuchtigkeit den konfigurierten Grenzwert, schaltet ein
   `binary_sensor` auf "Warnung".
+- Bringt eine eigene **Lovelace-Übersichtskarte** mit, die automatisch alle
+  Spulen anzeigt – keine YAML-Konfiguration oder zusätzliche Ressource
+  nötig, siehe unten.
 
 ## Installation
 
@@ -80,7 +83,29 @@ usw.). Die Restmenge wird dort bewusst nicht verändert – dafür gibt es die
   `amount`, ohne Angabe wird auf das Gesamtgewicht zurückgesetzt) – z. B.
   beim Einlegen einer neuen Spule.
 
-## Beispiel-Dashboard-Karte
+## Dashboard-Karte
+
+### Eingebaute Übersichtskarte (empfohlen)
+
+Die Integration liefert eine eigene Lovelace-Karte mit, die **automatisch
+alle Spulen** anzeigt (Farbe, Material, Füllstand als Fortschrittsbalken,
+Luftfeuchtigkeits-Status) und sich selbst beim Frontend registriert – keine
+zusätzliche Ressource unter *Einstellungen → Dashboards → Ressourcen*
+nötig. Einfach eine neue Karte hinzufügen und "Filament Manager" auswählen,
+oder per YAML:
+
+```yaml
+type: custom:filament-manager-card
+```
+
+Ein Klick auf eine Spule öffnet deren Detailansicht. Nach einem Update der
+Integration ggf. einmal den Browser-Cache leeren (Strg/Cmd+Shift+R), falls
+die Karte optisch nicht aktualisiert wirkt.
+
+### Manuelle Einzel-Karte
+
+Alternativ lässt sich jede Spule auch als gewöhnliche Entitäten-Karte
+anzeigen:
 
 ```yaml
 type: entities
