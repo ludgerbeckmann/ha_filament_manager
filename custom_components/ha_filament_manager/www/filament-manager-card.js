@@ -60,6 +60,10 @@ class FilamentManagerCard extends HTMLElement {
     return {};
   }
 
+  static getConfigElement() {
+    return document.createElement("filament-manager-card-editor");
+  }
+
   connectedCallback() {
     this._renderIfReady();
   }
@@ -251,3 +255,74 @@ window.customCards.push({
   description: "Übersicht aller Filamentspulen (Füllstand, Material, Farbe, Luftfeuchtigkeit).",
   preview: false,
 });
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char])
+  );
+}
+
+/**
+ * Minimal visual editor: just the (optional) card title, so Lovelace's
+ * "Visual editor not supported" fallback notice no longer shows up. Uses
+ * <ha-textfield>, which the frontend has already registered globally by the
+ * time a card editor can open - no import needed.
+ */
+class FilamentManagerCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = config || {};
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+  }
+
+  connectedCallback() {
+    this._render();
+  }
+
+  _render() {
+    if (!this._config) return;
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: "open" });
+    }
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        .form { padding: 16px 0; }
+        ha-textfield { display: block; }
+      </style>
+      <div class="form">
+        <ha-textfield
+          label="Titel (leer lassen für „Filament Manager“)"
+          value="${escapeHtml(this._config.title || "")}"
+        ></ha-textfield>
+      </div>
+    `;
+
+    const field = this.shadowRoot.querySelector("ha-textfield");
+    field.addEventListener("input", (event) => this._titleChanged(event));
+  }
+
+  _titleChanged(event) {
+    const value = event.target.value;
+    const newConfig = { ...this._config };
+    if (value) {
+      newConfig.title = value;
+    } else {
+      delete newConfig.title;
+    }
+    this._config = newConfig;
+
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config: newConfig },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+}
+
+customElements.define("filament-manager-card-editor", FilamentManagerCardEditor);
