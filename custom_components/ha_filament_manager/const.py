@@ -54,12 +54,16 @@ COLOR_OPTIONS: Final[list[str]] = [
     "Silber",
     "Rot",
     "Blau",
+    "Himmelblau",
     "Grün",
+    "Meeresgrün",
     "Gelb",
     "Orange",
     "Lila",
     "Pink",
     "Braun",
+    "Holzfarbe",
+    "Beige",
     "Transparent",
     "Gold",
     "Sonstige",
@@ -79,6 +83,7 @@ MANUFACTURER_OPTIONS: Final[list[str]] = [
     "ColorFabb",
     "3DJake",
     "Das Filament",
+    "Elegoo",
     "Sonstiges",
 ]
 
@@ -133,7 +138,7 @@ CARD_FILENAME: Final = "filament-manager-card.js"
 CARD_URL_PATH: Final = f"/{DOMAIN}_files/{CARD_FILENAME}"
 # Bump whenever the card's JS changes, to bust browser caching of the
 # static file (independent of the integration's own manifest version).
-CARD_VERSION: Final = "9"
+CARD_VERSION: Final = "10"
 
 
 def signal_spool_updated(subentry_id: str) -> str:
