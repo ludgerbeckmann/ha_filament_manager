@@ -18,7 +18,10 @@
           "total_weight": "Gesamtgewicht (neue Spule)",
           "initial_remaining_weight": "Aktuelle Restmenge",
           "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
-          "humidity_max": "Maximale Luftfeuchtigkeit"
+          "humidity_max": "Maximale Luftfeuchtigkeit",
+          "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
+          "notify_targets": "Benachrichtigen (optional)",
+          "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
         }
       },
       "name": {
@@ -50,7 +53,10 @@
           "diameter": "Durchmesser",
           "total_weight": "Gesamtgewicht (neue Spule)",
           "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
-          "humidity_max": "Maximale Luftfeuchtigkeit"
+          "humidity_max": "Maximale Luftfeuchtigkeit",
+          "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
+          "notify_targets": "Benachrichtigen (optional)",
+          "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
         }
       }
     },
@@ -78,6 +84,9 @@
     "binary_sensor": {
       "humidity_alert": {
         "name": "Luftfeuchtigkeitswarnung"
+      },
+      "low_stock_alert": {
+        "name": "Bestand niedrig"
       }
     }
   },
