@@ -1,34 +1,34 @@
 """Shared helpers for Filament Manager entities."""
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigSubentry
 from homeassistant.helpers.entity import DeviceInfo
 
 from .const import CONF_BOX, CONF_MANUFACTURER, CONF_MATERIAL, DOMAIN
 
 
-def spool_device_info(entry: ConfigEntry) -> DeviceInfo:
+def spool_device_info(subentry: ConfigSubentry) -> DeviceInfo:
     """Return the device info shared by all entities that belong to one spool."""
     info = DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name=entry.title,
-        manufacturer=entry.options.get(CONF_MANUFACTURER) or "Filament Manager",
-        model=entry.options.get(CONF_MATERIAL),
+        identifiers={(DOMAIN, subentry.subentry_id)},
+        name=subentry.title,
+        manufacturer=subentry.data.get(CONF_MANUFACTURER) or "Filament Manager",
+        model=subentry.data.get(CONF_MATERIAL),
     )
-    box_entry_id = entry.options.get(CONF_BOX)
-    if box_entry_id:
+    box_subentry_id = subentry.data.get(CONF_BOX)
+    if box_subentry_id:
         # Links the spool's device to its filament box in the device
         # registry, so HA (and the overview card) can group them - even if
         # the referenced box was since removed, this is silently ignored.
-        info["via_device"] = (DOMAIN, box_entry_id)
+        info["via_device"] = (DOMAIN, box_subentry_id)
     return info
 
 
-def box_device_info(entry: ConfigEntry) -> DeviceInfo:
+def box_device_info(subentry: ConfigSubentry) -> DeviceInfo:
     """Return the device info shared by all entities that belong to one filament box."""
     return DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name=entry.title,
+        identifiers={(DOMAIN, subentry.subentry_id)},
+        name=subentry.title,
         manufacturer="Filament Manager",
         model="Filamentbox",
     )

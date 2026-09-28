@@ -11,6 +11,10 @@ schlanke, native Home-Assistant-Integration ohne externen Server.
 
 ## Funktionen
 
+- Die Integration legt **einen einzigen Eintrag** unter *Einstellungen →
+  Geräte & Dienste* an. Filamentspulen und -boxen werden darin als
+  Unterobjekte verwaltet (hinzufügen/bearbeiten/löschen über den Eintrag
+  selbst) – keine separate Integrationsinstanz pro Spule mehr.
 - Jede Filamentspule wird als eigenes Gerät angelegt, mit **Name, Material,
   Farbe, Hersteller, Durchmesser** und **Gesamt-/Restgewicht**.
 - Die Restmenge lässt sich direkt im Dashboard anpassen (editierbare
@@ -52,11 +56,14 @@ und Home Assistant neu starten.
 
 ## Einrichtung
 
-Über *Einstellungen → Geräte & Dienste → Integration hinzufügen* → nach
-"Filament Manager" suchen erscheint zunächst eine Auswahl, ob eine
-**Filamentspule** oder eine **Filamentbox** angelegt werden soll.
+Einmalig über *Einstellungen → Geräte & Dienste → Integration hinzufügen* →
+nach "Filament Manager" suchen und hinzufügen (ohne weitere Eingabe). Danach
+erscheint "Filament Manager" als ein einzelner Eintrag; Spulen und Boxen
+werden über dessen "+ Hinzufügen"-Schaltfläche als Unterobjekte angelegt.
 
 ### Spule anlegen
+
+Im Filament-Manager-Eintrag "+ Hinzufügen" → **Filamentspule** wählen:
 
 1. Material und Farbe (beides Dropdowns mit gängigen Werten, aber frei
    überschreibbar) sowie optional Hersteller (ebenfalls Dropdown mit
@@ -79,18 +86,18 @@ und Home Assistant neu starten.
 5. Im letzten Schritt einen Namen vergeben – vorbelegt mit einem Vorschlag
    aus Hersteller, Material und Farbe (z. B. "Prusament PETG Rot"), kann
    aber beliebig angepasst werden.
-6. Für eine weitere Spule den Vorgang wiederholen ("+ Integration
-   hinzufügen" → erneut "Filament Manager" wählen).
+6. Für eine weitere Spule den Vorgang wiederholen ("+ Hinzufügen" →
+   erneut **Filamentspule** wählen).
 
 Bekannte Gesamtgewichte für bestimmte Hersteller/Material-Kombinationen
 sind in `custom_components/ha_filament_manager/const.py`
 (`MANUFACTURER_MATERIAL_WEIGHTS`) hinterlegt und lassen sich dort beliebig
 ergänzen, sobald reale Werte bekannt sind.
 
-Bestehende Spulen lassen sich über das Zahnrad-Symbol des jeweiligen
-Eintrags bearbeiten (Material, Farbe, Gesamtgewicht, Filamentbox,
-Luftfeuchtigkeitssensor usw.). Die Restmenge wird dort bewusst nicht
-verändert – dafür gibt es die `number`-Entität und die Dienste unten.
+Bestehende Spulen lassen sich über das Zahnrad-Symbol der jeweiligen Spule
+im Filament-Manager-Eintrag bearbeiten (Material, Farbe, Gesamtgewicht,
+Filamentbox, Luftfeuchtigkeitssensor usw.). Die Restmenge wird dort bewusst
+nicht verändert – dafür gibt es die `number`-Entität und die Dienste unten.
 
 ## Filamentboxen
 
@@ -99,8 +106,7 @@ Eine **Filamentbox** bildet eine physische Trockenbox ab, in die bis zu
 ausgestattet ist. Statt den Sensor mehrfach je Spule zu hinterlegen, wird er
 einmal an der Box konfiguriert:
 
-1. Bei "Integration hinzufügen" → "Filament Manager" → **Filamentbox**
-   wählen.
+1. Im Filament-Manager-Eintrag "+ Hinzufügen" → **Filamentbox** wählen.
 2. Namen (z. B. "Trockenbox 1") sowie optional Luftfeuchtigkeitssensor,
    Grenzwert und Benachrichtigungseinstellungen hinterlegen (siehe
    "Benachrichtigungen" unten – funktioniert für Boxen genauso wie für
