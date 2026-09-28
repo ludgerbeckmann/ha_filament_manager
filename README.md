@@ -102,9 +102,11 @@ title: Meine Spulen  # optional, per UI-Editor (Stift-Symbol) änderbar
 Der Titel lässt sich auch über den visuellen Karten-Editor setzen (Stift-Symbol
 auf der Karte), ohne YAML zu bearbeiten.
 
-Ein Klick auf eine Spule öffnet deren Detailansicht. Nach einem Update der
-Integration ggf. einmal den Browser-Cache leeren (Strg/Cmd+Shift+R), falls
-die Karte optisch nicht aktualisiert wirkt.
+Ein Klick auf eine Zeile öffnet die Detailansicht der **Restmenge** (dort
+direkt editierbar); ein Klick auf das Luftfeuchtigkeits-Symbol öffnet
+stattdessen die Detailansicht des verknüpften **Luftfeuchtigkeitssensors**.
+Nach einem Update der Integration ggf. einmal den Browser-Cache leeren
+(Strg/Cmd+Shift+R), falls die Karte optisch nicht aktualisiert wirkt.
 
 ### Manuelle Einzel-Karte
 

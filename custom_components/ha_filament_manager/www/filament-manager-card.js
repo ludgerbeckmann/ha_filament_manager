@@ -117,6 +117,12 @@ class FilamentManagerCard extends HTMLElement {
       const binaryState = stateOf(binarySensorEntry && binarySensorEntry.entity_id);
       const percent = percentState ? Number(percentState.state) : null;
 
+      // Prefer the linked humidity sensor itself (shows the actual reading
+      // and its history) over our on/off binary_sensor as the tap target.
+      const humidityEntityId = binaryState
+        ? binaryState.attributes.source_entity_id || binaryState.entity_id
+        : null;
+
       return {
         deviceId,
         name: (device && (device.name_by_user || device.name)) || "Spule",
@@ -125,8 +131,11 @@ class FilamentManagerCard extends HTMLElement {
         percent: percent !== null && !Number.isNaN(percent) ? percent : null,
         remaining: numberState ? numberState.state : null,
         unit: numberState ? numberState.attributes.unit_of_measurement : "g",
-        percentEntityId: percentState ? percentState.entity_id : null,
-        numberEntityId: numberEntry ? numberEntry.entity_id : null,
+        // The number entity is editable, so it's the more useful tap target
+        // than the (read-only) percentage sensor - fall back to it if for
+        // some reason the number entity is missing.
+        primaryEntityId: numberEntry ? numberEntry.entity_id : percentState ? percentState.entity_id : null,
+        humidityEntityId,
         humidityAlert: binaryState ? binaryState.state === "on" : false,
         hasHumiditySensor: !!binarySensorEntry,
       };
@@ -162,12 +171,13 @@ class FilamentManagerCard extends HTMLElement {
             const humidityBadge = spool.hasHumiditySensor
               ? `<ha-icon
                    class="humidity-badge ${spool.humidityAlert ? "alert" : ""}"
+                   data-entity="${spool.humidityEntityId || ""}"
                    icon="${spool.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"
                    title="${spool.humidityAlert ? "Luftfeuchtigkeit zu hoch" : "Luftfeuchtigkeit OK"}"
                  ></ha-icon>`
               : "";
             return `
-              <div class="row" data-entity="${spool.percentEntityId || spool.numberEntityId || ""}">
+              <div class="row" data-entity="${spool.primaryEntityId || ""}">
                 <span class="swatch" style="background:${swatchFor(spool.color)}" title="${spool.color || ""}"></span>
                 <div class="info">
                   <div class="name">${spool.name}</div>
@@ -228,7 +238,7 @@ class FilamentManagerCard extends HTMLElement {
         }
         .fill { height: 100%; border-radius: 3px; }
         .percent { font-size: 0.85em; width: 3em; text-align: right; flex: none; }
-        .humidity-badge { --mdc-icon-size: 20px; color: var(--secondary-text-color); flex: none; }
+        .humidity-badge { --mdc-icon-size: 20px; color: var(--secondary-text-color); flex: none; cursor: pointer; }
         .humidity-badge.alert { color: var(--error-color, #db4437); }
         .empty { color: var(--secondary-text-color); padding: 8px 0; }
       </style>
@@ -237,6 +247,18 @@ class FilamentManagerCard extends HTMLElement {
         ${rows}
       </ha-card>
     `;
+
+    // The humidity badge opens its own entity and must stop the click from
+    // also bubbling to the row (which would otherwise open the spool's
+    // remaining-weight entity instead).
+    this.shadowRoot.querySelectorAll(".humidity-badge[data-entity]").forEach((badge) => {
+      const entityId = badge.getAttribute("data-entity");
+      if (!entityId) return;
+      badge.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this._openMoreInfo(entityId);
+      });
+    });
 
     this.shadowRoot.querySelectorAll(".row[data-entity]").forEach((row) => {
       const entityId = row.getAttribute("data-entity");
