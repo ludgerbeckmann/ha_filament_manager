@@ -249,7 +249,7 @@ class FilamentManagerCard extends HTMLElement {
           overflow: hidden;
         }
         .fill { height: 100%; border-radius: 3px; }
-        .progress-sub { font-size: 0.8em; text-align: right; }
+        .progress-sub { font-size: 0.8em; text-align: left; }
         .humidity-col {
           display: flex;
           flex-direction: column;
