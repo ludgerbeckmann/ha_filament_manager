@@ -1,9 +1,11 @@
 """The Filament Manager integration.
 
-Each config entry represents exactly one filament spool. Its live state
-(remaining weight) is kept in ``entry.runtime_data`` so it can be shared
-between the editable number entity and the read-only percentage sensor
-without re-deriving it from entity state lookups.
+Each config entry represents either one filament spool or one filament box
+(a physical dry box grouping up to four spools, see boxes.py) - both are
+instances of the same integration, told apart by CONF_ENTRY_TYPE. A spool's
+live state (remaining weight) is kept in ``entry.runtime_data`` so it can be
+shared between the editable number entity and the read-only percentage
+sensor without re-deriving it from entity state lookups.
 """
 from __future__ import annotations
 
@@ -21,11 +23,20 @@ from .const import (
     CARD_FILENAME,
     CARD_URL_PATH,
     CARD_VERSION,
+    CONF_ENTRY_TYPE,
     CONF_INITIAL_REMAINING_WEIGHT,
     CONF_TOTAL_WEIGHT,
+    ENTRY_TYPE_BOX,
 )
 
 PLATFORMS: list[Platform] = [Platform.NUMBER, Platform.SENSOR, Platform.BINARY_SENSOR]
+# A filament box only ever hosts a shared humidity alert - it has no weight,
+# material or color of its own.
+BOX_PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR]
+
+
+def _platforms_for(entry: ConfigEntry) -> list[Platform]:
+    return BOX_PLATFORMS if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_BOX else PLATFORMS
 
 
 @dataclass
@@ -50,14 +61,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up a spool from a config entry."""
-    entry.runtime_data = SpoolRuntimeData(
-        remaining_weight=entry.options.get(
-            CONF_INITIAL_REMAINING_WEIGHT, entry.options[CONF_TOTAL_WEIGHT]
+    """Set up a spool or filament box from a config entry."""
+    if entry.data.get(CONF_ENTRY_TYPE) != ENTRY_TYPE_BOX:
+        entry.runtime_data = SpoolRuntimeData(
+            remaining_weight=entry.options.get(
+                CONF_INITIAL_REMAINING_WEIGHT, entry.options[CONF_TOTAL_WEIGHT]
+            )
         )
-    )
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, _platforms_for(entry))
     return True
 
 
@@ -67,5 +79,5 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a spool's config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    """Unload a spool's or filament box's config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, _platforms_for(entry))

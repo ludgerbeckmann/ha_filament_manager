@@ -11,18 +11,22 @@ from homeassistant.components.binary_sensor import BinarySensorDeviceClass, Bina
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
+    CONF_BOX,
+    CONF_ENTRY_TYPE,
     CONF_HUMIDITY_MAX,
     CONF_HUMIDITY_SENSOR,
     CONF_LOW_STOCK_THRESHOLD,
     CONF_TOTAL_WEIGHT,
     DEFAULT_HUMIDITY_MAX,
+    ENTRY_TYPE_BOX,
     signal_spool_updated,
 )
-from .entity import spool_device_info
+from .entity import box_device_info, spool_device_info
 from .notify_helper import async_handle_alert_transition
 
 
@@ -32,12 +36,19 @@ async def async_setup_entry(
     """Set up the humidity and/or low-stock alert binary sensors, if configured."""
     entities: list[BinarySensorEntity] = []
 
-    humidity_sensor = entry.options.get(CONF_HUMIDITY_SENSOR)
-    if humidity_sensor:
-        entities.append(FilamentHumidityAlert(entry, humidity_sensor))
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_BOX:
+        humidity_sensor = entry.options.get(CONF_HUMIDITY_SENSOR)
+        if humidity_sensor:
+            entities.append(FilamentHumidityAlert(entry, humidity_sensor, device_info=box_device_info(entry)))
+    else:
+        humidity_sensor = entry.options.get(CONF_HUMIDITY_SENSOR)
+        # A spool assigned to a box is monitored by the box's own humidity
+        # sensor instead - its own (if still configured) is ignored.
+        if humidity_sensor and not entry.options.get(CONF_BOX):
+            entities.append(FilamentHumidityAlert(entry, humidity_sensor, device_info=spool_device_info(entry)))
 
-    if entry.options.get(CONF_LOW_STOCK_THRESHOLD) is not None:
-        entities.append(FilamentLowStockAlert(entry))
+        if entry.options.get(CONF_LOW_STOCK_THRESHOLD) is not None:
+            entities.append(FilamentLowStockAlert(entry))
 
     if entities:
         async_add_entities(entities)
@@ -51,13 +62,13 @@ class FilamentHumidityAlert(BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.MOISTURE
     _attr_icon = "mdi:water-percent"
 
-    def __init__(self, entry: ConfigEntry, source_entity_id: str) -> None:
+    def __init__(self, entry: ConfigEntry, source_entity_id: str, *, device_info: DeviceInfo) -> None:
         self._entry = entry
         self._source_entity_id = source_entity_id
         self._threshold = entry.options.get(CONF_HUMIDITY_MAX, DEFAULT_HUMIDITY_MAX)
         self._current_humidity: float | None = None
         self._attr_unique_id = f"{entry.entry_id}_humidity_alert"
-        self._attr_device_info = spool_device_info(entry)
+        self._attr_device_info = device_info
         self._attr_available = False
         self._attr_is_on = False
 

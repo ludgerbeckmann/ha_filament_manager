@@ -2,6 +2,14 @@
   "config": {
     "step": {
       "user": {
+        "title": "Zum Filament Manager hinzufügen",
+        "description": "Was möchtest du hinzufügen?",
+        "menu_options": {
+          "spool": "Eine Filamentspule",
+          "box": "Eine Filamentbox (gruppiert bis zu 4 Spulen, z. B. eine Trockenbox)"
+        }
+      },
+      "spool": {
         "title": "Filamentspule hinzufügen",
         "description": "Um welche Art Spule handelt es sich?",
         "data": {
@@ -17,7 +25,8 @@
           "diameter": "Durchmesser",
           "total_weight": "Gesamtgewicht (neue Spule)",
           "initial_remaining_weight": "Aktuelle Restmenge",
-          "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
+          "box_entry_id": "Filamentbox (optional)",
+          "humidity_sensor": "Luftfeuchtigkeitssensor (optional, wird ignoriert, wenn oben eine Filamentbox ausgewählt ist)",
           "humidity_max": "Maximale Luftfeuchtigkeit",
           "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
           "notify_targets": "Benachrichtigen (optional)",
@@ -30,11 +39,23 @@
         "data": {
           "name": "Name"
         }
+      },
+      "box": {
+        "title": "Filamentbox hinzufügen",
+        "description": "Eine Filamentbox gruppiert bis zu 4 Spulen (z. B. eine Trockenbox) und kann einen gemeinsamen Luftfeuchtigkeitssensor für alle hinterlegten Spulen tragen.",
+        "data": {
+          "name": "Name",
+          "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
+          "humidity_max": "Maximale Luftfeuchtigkeit",
+          "notify_targets": "Benachrichtigen (optional)",
+          "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
+        }
       }
     },
     "error": {
-      "name_required": "Bitte gib einen Namen für die Spule ein.",
-      "remaining_exceeds_total": "Die Restmenge darf nicht größer als das Gesamtgewicht sein."
+      "name_required": "Bitte gib einen Namen ein.",
+      "remaining_exceeds_total": "Die Restmenge darf nicht größer als das Gesamtgewicht sein.",
+      "box_full": "Diese Filamentbox ist bereits voll (max. 4 Spulen)."
     },
     "abort": {
       "already_configured": "Diese Spule ist bereits konfiguriert."
@@ -52,16 +73,29 @@
           "manufacturer": "Hersteller",
           "diameter": "Durchmesser",
           "total_weight": "Gesamtgewicht (neue Spule)",
-          "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
+          "box_entry_id": "Filamentbox (optional)",
+          "humidity_sensor": "Luftfeuchtigkeitssensor (optional, wird ignoriert, wenn oben eine Filamentbox ausgewählt ist)",
           "humidity_max": "Maximale Luftfeuchtigkeit",
           "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
+          "notify_targets": "Benachrichtigen (optional)",
+          "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
+        }
+      },
+      "edit_box": {
+        "title": "Filamentbox bearbeiten",
+        "description": "Aktualisiere den Namen und die Luftfeuchtigkeitseinstellungen der Box.",
+        "data": {
+          "name": "Name",
+          "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
+          "humidity_max": "Maximale Luftfeuchtigkeit",
           "notify_targets": "Benachrichtigen (optional)",
           "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
         }
       }
     },
     "error": {
-      "name_required": "Bitte gib einen Namen für die Spule ein."
+      "name_required": "Bitte gib einen Namen ein.",
+      "box_full": "Diese Filamentbox ist bereits voll (max. 4 Spulen)."
     }
   },
   "entity": {

@@ -52,8 +52,9 @@ class FilamentManagerCard extends HTMLElement {
   }
 
   getCardSize() {
-    const count = this._spools ? this._spools.length : 1;
-    return Math.max(1, count) + 1;
+    const data = this._data || { boxes: [], ungrouped: [] };
+    const rows = data.boxes.reduce((sum, box) => sum + 1 + box.spools.length, 0) + data.ungrouped.length;
+    return Math.max(1, rows) + 1;
   }
 
   static getStubConfig() {
@@ -70,19 +71,26 @@ class FilamentManagerCard extends HTMLElement {
 
   _renderIfReady() {
     if (!this._hass) return;
-    const spools = this._collectSpools(this._hass);
+    const data = this._collectData(this._hass);
     // Avoid tearing down/rebuilding the DOM on every state tick when
     // nothing relevant changed.
-    const signature = JSON.stringify(spools);
+    const signature = JSON.stringify(data);
     if (signature === this._lastSignature) return;
     this._lastSignature = signature;
-    this._spools = spools;
-    this._render(spools);
+    this._data = data;
+    this._render(data);
   }
 
-  _collectSpools(hass) {
+  /**
+   * Collects every spool and filament box created by this integration,
+   * grouping spools under the box they're assigned to (if any). A device is
+   * recognised as a box, rather than a spool, by not having a `number.*`
+   * entity - only spools have an editable remaining-weight number.
+   */
+  _collectData(hass) {
     const entities = hass.entities || {};
     const devices = hass.devices || {};
+    const stateOf = (entityId) => (entityId ? hass.states[entityId] : undefined);
 
     const byDevice = {};
     for (const entry of Object.values(entities)) {
@@ -90,12 +98,41 @@ class FilamentManagerCard extends HTMLElement {
       (byDevice[entry.device_id] = byDevice[entry.device_id] || []).push(entry);
     }
 
-    const spools = Object.entries(byDevice).map(([deviceId, entries]) => {
-      const device = devices[deviceId];
-      const stateOf = (entityId) => (entityId ? hass.states[entityId] : undefined);
-
-      const numberEntry = entries.find((e) => e.entity_id.startsWith("number."));
+    const readHumidity = (entries) => {
       const binarySensorEntry = entries.find((e) => e.entity_id.startsWith("binary_sensor."));
+      const binaryState = stateOf(binarySensorEntry && binarySensorEntry.entity_id);
+      return {
+        // Prefer the linked humidity sensor itself (shows the actual
+        // reading and its history) over our on/off binary_sensor as the tap
+        // target.
+        humidityEntityId: binaryState ? binaryState.attributes.source_entity_id || binaryState.entity_id : null,
+        humidityValue:
+          binaryState && typeof binaryState.attributes.current_humidity === "number"
+            ? binaryState.attributes.current_humidity
+            : null,
+        humidityAlert: binaryState ? binaryState.state === "on" : false,
+        hasHumiditySensor: !!binarySensorEntry,
+      };
+    };
+
+    const boxes = {};
+    for (const [deviceId, entries] of Object.entries(byDevice)) {
+      if (entries.some((e) => e.entity_id.startsWith("number."))) continue;
+      const device = devices[deviceId];
+      boxes[deviceId] = {
+        deviceId,
+        name: (device && (device.name_by_user || device.name)) || "Filamentbox",
+        spools: [],
+        ...readHumidity(entries),
+      };
+    }
+
+    const ungrouped = [];
+    for (const [deviceId, entries] of Object.entries(byDevice)) {
+      const numberEntry = entries.find((e) => e.entity_id.startsWith("number."));
+      if (!numberEntry) continue;
+
+      const device = devices[deviceId];
       const sensorEntries = entries.filter((e) => e.entity_id.startsWith("sensor."));
 
       let percentState;
@@ -113,21 +150,10 @@ class FilamentManagerCard extends HTMLElement {
         }
       }
 
-      const numberState = stateOf(numberEntry && numberEntry.entity_id);
-      const binaryState = stateOf(binarySensorEntry && binarySensorEntry.entity_id);
+      const numberState = stateOf(numberEntry.entity_id);
       const percent = percentState ? Number(percentState.state) : null;
 
-      // Prefer the linked humidity sensor itself (shows the actual reading
-      // and its history) over our on/off binary_sensor as the tap target.
-      const humidityEntityId = binaryState
-        ? binaryState.attributes.source_entity_id || binaryState.entity_id
-        : null;
-      const humidityValue =
-        binaryState && typeof binaryState.attributes.current_humidity === "number"
-          ? binaryState.attributes.current_humidity
-          : null;
-
-      return {
+      const spool = {
         deviceId,
         name: (device && (device.name_by_user || device.name)) || "Spule",
         material: materialState ? materialState.state : null,
@@ -138,16 +164,24 @@ class FilamentManagerCard extends HTMLElement {
         // The number entity is editable, so it's the more useful tap target
         // than the (read-only) percentage sensor - fall back to it if for
         // some reason the number entity is missing.
-        primaryEntityId: numberEntry ? numberEntry.entity_id : percentState ? percentState.entity_id : null,
-        humidityEntityId,
-        humidityValue,
-        humidityAlert: binaryState ? binaryState.state === "on" : false,
-        hasHumiditySensor: !!binarySensorEntry,
+        primaryEntityId: numberEntry.entity_id,
+        ...readHumidity(entries),
       };
-    });
 
-    spools.sort((a, b) => a.name.localeCompare(b.name));
-    return spools;
+      const boxId = device && device.via_device_id;
+      if (boxId && boxes[boxId]) {
+        boxes[boxId].spools.push(spool);
+      } else {
+        ungrouped.push(spool);
+      }
+    }
+
+    const boxList = Object.values(boxes).filter((box) => box.spools.length > 0);
+    boxList.forEach((box) => box.spools.sort((a, b) => a.name.localeCompare(b.name)));
+    boxList.sort((a, b) => a.name.localeCompare(b.name));
+    ungrouped.sort((a, b) => a.name.localeCompare(b.name));
+
+    return { boxes: boxList, ungrouped };
   }
 
   _openMoreInfo(entityId) {
@@ -160,51 +194,73 @@ class FilamentManagerCard extends HTMLElement {
     this.dispatchEvent(event);
   }
 
-  _render(spools) {
+  _renderSpoolRow(spool, { indent = false } = {}) {
+    const percentLabel = spool.percent !== null ? `${spool.percent}%` : "–";
+    const tone = percentTone(spool.percent);
+    const barWidth = spool.percent !== null ? Math.max(0, Math.min(100, spool.percent)) : 0;
+    const weightLabel = spool.remaining !== null ? `${spool.remaining} ${spool.unit}` : "–";
+    const progressSub = `${percentLabel} · ${weightLabel}`;
+
+    const humidityValueLabel = spool.humidityValue !== null ? `${spool.humidityValue}%` : "–";
+    const humidityColumn = spool.hasHumiditySensor
+      ? `<div class="humidity-col" data-entity="${spool.humidityEntityId || ""}">
+           <ha-icon
+             class="humidity-badge ${spool.humidityAlert ? "alert" : ""}"
+             icon="${spool.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"
+             title="${spool.humidityAlert ? "Luftfeuchtigkeit zu hoch" : "Luftfeuchtigkeit OK"}"
+           ></ha-icon>
+           <span class="humidity-value ${spool.humidityAlert ? "alert" : ""}">${humidityValueLabel}</span>
+         </div>`
+      : "";
+
+    return `
+      <div class="row ${indent ? "boxed" : ""}" data-entity="${spool.primaryEntityId || ""}">
+        <span class="swatch" style="background:${swatchFor(spool.color)}" title="${spool.color || ""}"></span>
+        <div class="info">
+          <div class="name">${spool.name}</div>
+          <div class="meta">${[spool.material, spool.color].filter(Boolean).join(" · ") || "&nbsp;"}</div>
+        </div>
+        <div class="progress-col">
+          <div class="track"><div class="fill" style="width:${barWidth}%;background:${tone}"></div></div>
+          <span class="progress-sub" style="color:${tone}">${progressSub}</span>
+        </div>
+        ${humidityColumn}
+      </div>
+    `;
+  }
+
+  _renderBoxSection(box) {
+    const humidityValueLabel = box.humidityValue !== null ? `${box.humidityValue}%` : "–";
+    const humidityBadge = box.hasHumiditySensor
+      ? `<span class="box-humidity ${box.humidityAlert ? "alert" : ""}">
+           <ha-icon icon="${box.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"></ha-icon>
+           ${humidityValueLabel}
+         </span>`
+      : "";
+
+    return `
+      <div class="box-header" data-entity="${box.humidityEntityId || ""}">
+        <ha-icon class="box-icon" icon="mdi:archive-outline"></ha-icon>
+        <span class="box-name">${box.name}</span>
+        ${humidityBadge}
+      </div>
+      ${box.spools.map((spool) => this._renderSpoolRow(spool, { indent: true })).join("")}
+    `;
+  }
+
+  _render(data) {
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
     }
 
     const title = this._config.title !== undefined ? this._config.title : "Filament Manager";
 
-    const rows = spools.length
-      ? spools
-          .map((spool) => {
-            const percentLabel = spool.percent !== null ? `${spool.percent}%` : "–";
-            const tone = percentTone(spool.percent);
-            const barWidth = spool.percent !== null ? Math.max(0, Math.min(100, spool.percent)) : 0;
-            const weightLabel = spool.remaining !== null ? `${spool.remaining} ${spool.unit}` : "–";
-            const progressSub = `${percentLabel} · ${weightLabel}`;
-
-            const humidityValueLabel = spool.humidityValue !== null ? `${spool.humidityValue}%` : "–";
-            const humidityColumn = spool.hasHumiditySensor
-              ? `<div class="humidity-col" data-entity="${spool.humidityEntityId || ""}">
-                   <ha-icon
-                     class="humidity-badge ${spool.humidityAlert ? "alert" : ""}"
-                     icon="${spool.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"
-                     title="${spool.humidityAlert ? "Luftfeuchtigkeit zu hoch" : "Luftfeuchtigkeit OK"}"
-                   ></ha-icon>
-                   <span class="humidity-value ${spool.humidityAlert ? "alert" : ""}">${humidityValueLabel}</span>
-                 </div>`
-              : "";
-
-            return `
-              <div class="row" data-entity="${spool.primaryEntityId || ""}">
-                <span class="swatch" style="background:${swatchFor(spool.color)}" title="${spool.color || ""}"></span>
-                <div class="info">
-                  <div class="name">${spool.name}</div>
-                  <div class="meta">${[spool.material, spool.color].filter(Boolean).join(" · ") || "&nbsp;"}</div>
-                </div>
-                <div class="progress-col">
-                  <div class="track"><div class="fill" style="width:${barWidth}%;background:${tone}"></div></div>
-                  <span class="progress-sub" style="color:${tone}">${progressSub}</span>
-                </div>
-                ${humidityColumn}
-              </div>
-            `;
-          })
-          .join("")
-      : `<div class="empty">Keine Filamentspulen gefunden. Über "Integration hinzufügen" → "Filament Manager" anlegen.</div>`;
+    const boxSections = data.boxes.map((box) => this._renderBoxSection(box)).join("");
+    const ungroupedRows = data.ungrouped.map((spool) => this._renderSpoolRow(spool)).join("");
+    const rows =
+      boxSections || ungroupedRows
+        ? `<div class="rows">${boxSections}${ungroupedRows}</div>`
+        : `<div class="empty">Keine Filamentspulen gefunden. Über "Integration hinzufügen" → "Filament Manager" anlegen.</div>`;
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -218,7 +274,24 @@ class FilamentManagerCard extends HTMLElement {
           border-top: 1px solid var(--divider-color);
           cursor: pointer;
         }
-        .row:first-of-type { border-top: none; }
+        .rows > *:first-child { border-top: none; margin-top: 0; }
+        .row.boxed { padding-left: 24px; }
+        .box-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 0 4px;
+          margin-top: 4px;
+          border-top: 1px solid var(--divider-color);
+          color: var(--secondary-text-color);
+          font-weight: 500;
+          cursor: pointer;
+        }
+        .box-icon { --mdc-icon-size: 18px; }
+        .box-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .box-humidity { display: flex; align-items: center; gap: 4px; font-size: 0.85em; flex: none; }
+        .box-humidity ha-icon { --mdc-icon-size: 16px; }
+        .box-humidity.alert { color: var(--error-color, #db4437); }
         .swatch {
           width: 16px;
           height: 16px;
@@ -286,6 +359,13 @@ class FilamentManagerCard extends HTMLElement {
       const entityId = row.getAttribute("data-entity");
       if (!entityId) return;
       row.addEventListener("click", () => this._openMoreInfo(entityId));
+    });
+
+    // A box header opens its shared humidity sensor's detail view.
+    this.shadowRoot.querySelectorAll(".box-header[data-entity]").forEach((header) => {
+      const entityId = header.getAttribute("data-entity");
+      if (!entityId) return;
+      header.addEventListener("click", () => this._openMoreInfo(entityId));
     });
   }
 }
