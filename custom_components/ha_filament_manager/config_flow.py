@@ -2,9 +2,10 @@
 
 Every config entry represents one physical spool. Adding a new spool means
 adding another instance of this integration; editing one is done through its
-options flow (the gear icon on the entry). Creating a spool is split into two
-steps so the name can default to a suggestion built from the material, color
-and manufacturer chosen in the first step.
+options flow (the gear icon on the entry). Creating a spool is split into
+three steps: identity (material/color/manufacturer), details (diameter,
+total weight - suggested from the identity step - humidity), then name
+(suggested from the identity step too).
 """
 from __future__ import annotations
 
@@ -28,11 +29,11 @@ from .const import (
     CONF_TOTAL_WEIGHT,
     DEFAULT_DIAMETER,
     DEFAULT_HUMIDITY_MAX,
-    DEFAULT_TOTAL_WEIGHT,
     DIAMETER_OPTIONS,
     DOMAIN,
     MANUFACTURER_OPTIONS,
     MATERIAL_OPTIONS,
+    suggested_total_weight,
 )
 
 
@@ -68,7 +69,7 @@ def _suggest_name(data: dict[str, Any]) -> str:
     return " ".join(part for part in parts if part) or "Filamentspule"
 
 
-def _build_schema(defaults: dict[str, Any], *, include_name: bool, include_initial: bool) -> vol.Schema:
+def _identity_fields(defaults: dict[str, Any], *, include_name: bool) -> dict[Any, Any]:
     fields: dict[Any, Any] = {}
 
     if include_name:
@@ -83,14 +84,24 @@ def _build_schema(defaults: dict[str, Any], *, include_name: bool, include_initi
     fields[
         vol.Optional(CONF_MANUFACTURER, default=defaults.get(CONF_MANUFACTURER, ""))
     ] = _select(MANUFACTURER_OPTIONS)
+
+    return fields
+
+
+def _details_fields(defaults: dict[str, Any], *, include_initial: bool) -> dict[Any, Any]:
+    fields: dict[Any, Any] = {}
+
     fields[
         vol.Required(CONF_DIAMETER, default=defaults.get(CONF_DIAMETER, DEFAULT_DIAMETER))
     ] = selector.SelectSelector(
         selector.SelectSelectorConfig(options=DIAMETER_OPTIONS, mode=selector.SelectSelectorMode.DROPDOWN)
     )
-    fields[
-        vol.Required(CONF_TOTAL_WEIGHT, default=defaults.get(CONF_TOTAL_WEIGHT, DEFAULT_TOTAL_WEIGHT))
-    ] = _weight_selector()
+
+    default_total_weight = defaults.get(
+        CONF_TOTAL_WEIGHT,
+        suggested_total_weight(defaults.get(CONF_MANUFACTURER), defaults.get(CONF_MATERIAL)),
+    )
+    fields[vol.Required(CONF_TOTAL_WEIGHT, default=default_total_weight)] = _weight_selector()
 
     if include_initial:
         fields[vol.Optional(CONF_INITIAL_REMAINING_WEIGHT)] = _weight_selector()
@@ -109,6 +120,15 @@ def _build_schema(defaults: dict[str, Any], *, include_name: bool, include_initi
         )
     )
 
+    return fields
+
+
+def _build_schema(defaults: dict[str, Any], *, include_name: bool, include_initial: bool) -> vol.Schema:
+    """Combined identity + details schema, used by the (single-step) options flow."""
+    fields = {
+        **_identity_fields(defaults, include_name=include_name),
+        **_details_fields(defaults, include_initial=include_initial),
+    }
     return vol.Schema(fields)
 
 
@@ -121,7 +141,16 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
         self._spool_data: dict[str, Any] = {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Collect the details of a new spool, then move on to naming it."""
+        """Collect the spool's identity: material, color, manufacturer."""
+        if user_input is not None:
+            self._spool_data = user_input
+            return await self.async_step_details()
+
+        schema = vol.Schema(_identity_fields({}, include_name=False))
+        return self.async_show_form(step_id="user", data_schema=schema)
+
+    async def async_step_details(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Collect diameter, total weight (suggested from the identity step) and humidity settings."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -134,14 +163,14 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "remaining_exceeds_total"
             else:
                 user_input[CONF_INITIAL_REMAINING_WEIGHT] = initial_remaining
-                self._spool_data = user_input
+                self._spool_data = {**self._spool_data, **user_input}
                 return await self.async_step_name()
 
-        schema = _build_schema({}, include_name=False, include_initial=True)
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+        schema = vol.Schema(_details_fields(self._spool_data, include_initial=True))
+        return self.async_show_form(step_id="details", data_schema=schema, errors=errors)
 
     async def async_step_name(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Confirm the spool's name, pre-filled from the previous step's choices."""
+        """Confirm the spool's name, pre-filled from the identity step's choices."""
         errors: dict[str, str] = {}
 
         if user_input is not None:

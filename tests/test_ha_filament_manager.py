@@ -98,13 +98,14 @@ async def test_config_flow_suggests_name_and_creates_entry(hass: HomeAssistant) 
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_MATERIAL: "PETG",
-            CONF_COLOR: "Rot",
-            "manufacturer": "Prusament",
-            CONF_DIAMETER: "1.75",
-            CONF_TOTAL_WEIGHT: 1000,
-        },
+        {CONF_MATERIAL: "PETG", CONF_COLOR: "Rot", "manufacturer": "Prusament"},
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "details"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_DIAMETER: "1.75", CONF_TOTAL_WEIGHT: 1000},
     )
     assert result["type"] == "form"
     assert result["step_id"] == "name"
@@ -117,6 +118,27 @@ async def test_config_flow_suggests_name_and_creates_entry(hass: HomeAssistant) 
     await hass.async_block_till_done()
 
     assert hass.states.get("sensor.new_spool_material").state == "PETG"
+
+
+async def test_config_flow_suggests_total_weight_from_material(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+
+    # TPU has no manufacturer-specific entry, but a material-only default of
+    # 500g (common industry convention for flexible filaments).
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_MATERIAL: "TPU", CONF_COLOR: "Schwarz", "manufacturer": ""},
+    )
+    assert result["step_id"] == "details"
+    assert _schema_default(result["data_schema"], CONF_TOTAL_WEIGHT) == 500
+
+    # An unknown material falls back to the generic default.
+    result2 = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result2 = await hass.config_entries.flow.async_configure(
+        result2["flow_id"],
+        {CONF_MATERIAL: "PLA", CONF_COLOR: "Schwarz", "manufacturer": ""},
+    )
+    assert _schema_default(result2["data_schema"], CONF_TOTAL_WEIGHT) == 1000
 
 
 async def test_options_flow_updates_material(hass: HomeAssistant) -> None:

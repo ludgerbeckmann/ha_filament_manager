@@ -3,11 +3,17 @@
     "step": {
       "user": {
         "title": "Filamentspule hinzufügen",
-        "description": "Gib die Eigenschaften der Spule ein, die du verwalten möchtest.",
+        "description": "Um welche Art Spule handelt es sich?",
         "data": {
           "material": "Material",
           "color": "Farbe",
-          "manufacturer": "Hersteller",
+          "manufacturer": "Hersteller"
+        }
+      },
+      "details": {
+        "title": "Details zur Spule",
+        "description": "Das Gesamtgewicht wird - falls für Material/Hersteller bekannt - vorgeschlagen, sonst ein generischer Standardwert. Immer frei anpassbar.",
+        "data": {
           "diameter": "Durchmesser",
           "total_weight": "Gesamtgewicht (neue Spule)",
           "initial_remaining_weight": "Aktuelle Restmenge",
