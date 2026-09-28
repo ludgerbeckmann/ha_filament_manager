@@ -122,6 +122,10 @@ class FilamentManagerCard extends HTMLElement {
       const humidityEntityId = binaryState
         ? binaryState.attributes.source_entity_id || binaryState.entity_id
         : null;
+      const humidityValue =
+        binaryState && typeof binaryState.attributes.current_humidity === "number"
+          ? binaryState.attributes.current_humidity
+          : null;
 
       return {
         deviceId,
@@ -136,6 +140,7 @@ class FilamentManagerCard extends HTMLElement {
         // some reason the number entity is missing.
         primaryEntityId: numberEntry ? numberEntry.entity_id : percentState ? percentState.entity_id : null,
         humidityEntityId,
+        humidityValue,
         humidityAlert: binaryState ? binaryState.state === "on" : false,
         hasHumiditySensor: !!binarySensorEntry,
       };
@@ -168,14 +173,21 @@ class FilamentManagerCard extends HTMLElement {
             const percentLabel = spool.percent !== null ? `${spool.percent}%` : "–";
             const tone = percentTone(spool.percent);
             const barWidth = spool.percent !== null ? Math.max(0, Math.min(100, spool.percent)) : 0;
-            const humidityBadge = spool.hasHumiditySensor
-              ? `<ha-icon
-                   class="humidity-badge ${spool.humidityAlert ? "alert" : ""}"
-                   data-entity="${spool.humidityEntityId || ""}"
-                   icon="${spool.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"
-                   title="${spool.humidityAlert ? "Luftfeuchtigkeit zu hoch" : "Luftfeuchtigkeit OK"}"
-                 ></ha-icon>`
+            const weightLabel = spool.remaining !== null ? `${spool.remaining} ${spool.unit}` : "–";
+            const progressSub = `${percentLabel} · ${weightLabel}`;
+
+            const humidityValueLabel = spool.humidityValue !== null ? `${spool.humidityValue}%` : "–";
+            const humidityColumn = spool.hasHumiditySensor
+              ? `<div class="humidity-col" data-entity="${spool.humidityEntityId || ""}">
+                   <ha-icon
+                     class="humidity-badge ${spool.humidityAlert ? "alert" : ""}"
+                     icon="${spool.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"
+                     title="${spool.humidityAlert ? "Luftfeuchtigkeit zu hoch" : "Luftfeuchtigkeit OK"}"
+                   ></ha-icon>
+                   <span class="humidity-value ${spool.humidityAlert ? "alert" : ""}">${humidityValueLabel}</span>
+                 </div>`
               : "";
+
             return `
               <div class="row" data-entity="${spool.primaryEntityId || ""}">
                 <span class="swatch" style="background:${swatchFor(spool.color)}" title="${spool.color || ""}"></span>
@@ -183,11 +195,11 @@ class FilamentManagerCard extends HTMLElement {
                   <div class="name">${spool.name}</div>
                   <div class="meta">${[spool.material, spool.color].filter(Boolean).join(" · ") || "&nbsp;"}</div>
                 </div>
-                <div class="progress" title="${spool.remaining !== null ? `${spool.remaining} ${spool.unit} übrig` : ""}">
+                <div class="progress-col">
                   <div class="track"><div class="fill" style="width:${barWidth}%;background:${tone}"></div></div>
-                  <span class="percent" style="color:${tone}">${percentLabel}</span>
+                  <span class="progress-sub" style="color:${tone}">${progressSub}</span>
                 </div>
-                ${humidityBadge}
+                ${humidityColumn}
               </div>
             `;
           })
@@ -222,24 +234,34 @@ class FilamentManagerCard extends HTMLElement {
           white-space: nowrap;
         }
         .meta { color: var(--secondary-text-color); font-size: 0.85em; }
-        .progress {
+        .progress-col {
           display: flex;
-          align-items: center;
-          gap: 8px;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 4px;
           width: 40%;
           flex: none;
         }
         .track {
-          flex: 1 1 auto;
           height: 6px;
           border-radius: 3px;
           background: var(--divider-color);
           overflow: hidden;
         }
         .fill { height: 100%; border-radius: 3px; }
-        .percent { font-size: 0.85em; width: 3em; text-align: right; flex: none; }
-        .humidity-badge { --mdc-icon-size: 20px; color: var(--secondary-text-color); flex: none; cursor: pointer; }
+        .progress-sub { font-size: 0.8em; text-align: right; }
+        .humidity-col {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
+          flex: none;
+          cursor: pointer;
+        }
+        .humidity-badge { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
         .humidity-badge.alert { color: var(--error-color, #db4437); }
+        .humidity-value { font-size: 0.75em; color: var(--secondary-text-color); }
+        .humidity-value.alert { color: var(--error-color, #db4437); }
         .empty { color: var(--secondary-text-color); padding: 8px 0; }
       </style>
       <ha-card>
@@ -248,13 +270,13 @@ class FilamentManagerCard extends HTMLElement {
       </ha-card>
     `;
 
-    // The humidity badge opens its own entity and must stop the click from
+    // The humidity column opens its own entity and must stop the click from
     // also bubbling to the row (which would otherwise open the spool's
     // remaining-weight entity instead).
-    this.shadowRoot.querySelectorAll(".humidity-badge[data-entity]").forEach((badge) => {
-      const entityId = badge.getAttribute("data-entity");
+    this.shadowRoot.querySelectorAll(".humidity-col[data-entity]").forEach((column) => {
+      const entityId = column.getAttribute("data-entity");
       if (!entityId) return;
-      badge.addEventListener("click", (event) => {
+      column.addEventListener("click", (event) => {
         event.stopPropagation();
         this._openMoreInfo(entityId);
       });
