@@ -47,17 +47,26 @@ Jede **Spule** wird als eigene Instanz der Integration angelegt:
 
 1. *Einstellungen → Geräte & Dienste → Integration hinzufügen* → nach
    "Filament Manager" suchen.
-2. Material, Farbe (beides Dropdowns mit gängigen Werten, aber frei
+2. Material und Farbe (beides Dropdowns mit gängigen Werten, aber frei
    überschreibbar) sowie optional Hersteller (ebenfalls Dropdown mit
-   bekannten Marken), Durchmesser, Gesamtgewicht und (falls schon
-   angebrochen) aktuelle Restmenge eintragen.
-3. Optional einen Luftfeuchtigkeitssensor und einen Grenzwert (Standard 40 %)
+   bekannten Marken) auswählen.
+3. Durchmesser, Gesamtgewicht und (falls schon angebrochen) aktuelle
+   Restmenge eintragen. Das Gesamtgewicht ist bereits vorbelegt: mit einem
+   bekannten Realwert, falls für die Kombination aus Hersteller und Material
+   einer hinterlegt ist, sonst mit einem branchenüblichen Standardwert (z. B.
+   500 g für TPU/PVA, sonst 1000 g) – in jedem Fall frei überschreibbar.
+4. Optional einen Luftfeuchtigkeitssensor und einen Grenzwert (Standard 40 %)
    hinterlegen.
-4. Im letzten Schritt einen Namen vergeben – vorbelegt mit einem Vorschlag
+5. Im letzten Schritt einen Namen vergeben – vorbelegt mit einem Vorschlag
    aus Hersteller, Material und Farbe (z. B. "Prusament PETG Rot"), kann
    aber beliebig angepasst werden.
-5. Für eine weitere Spule den Vorgang wiederholen ("+ Integration
+6. Für eine weitere Spule den Vorgang wiederholen ("+ Integration
    hinzufügen" → erneut "Filament Manager" wählen).
+
+Bekannte Gesamtgewichte für bestimmte Hersteller/Material-Kombinationen
+sind in `custom_components/ha_filament_manager/const.py`
+(`MANUFACTURER_MATERIAL_WEIGHTS`) hinterlegt und lassen sich dort beliebig
+ergänzen, sobald reale Werte bekannt sind.
 
 Bestehende Spulen lassen sich über das Zahnrad-Symbol des jeweiligen
 Eintrags bearbeiten (Material, Farbe, Gesamtgewicht, Luftfeuchtigkeitssensor

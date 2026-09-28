@@ -3,11 +3,17 @@
     "step": {
       "user": {
         "title": "Add a filament spool",
-        "description": "Enter the details of the spool you want to track.",
+        "description": "What kind of spool is it?",
         "data": {
           "material": "Material",
           "color": "Color",
-          "manufacturer": "Manufacturer",
+          "manufacturer": "Manufacturer"
+        }
+      },
+      "details": {
+        "title": "Spool details",
+        "description": "Total weight is suggested from the material/manufacturer you picked where known, otherwise a generic default - always editable.",
+        "data": {
           "diameter": "Diameter",
           "total_weight": "Total weight (new spool)",
           "initial_remaining_weight": "Current remaining weight",

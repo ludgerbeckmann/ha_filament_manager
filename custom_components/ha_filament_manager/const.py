@@ -72,6 +72,43 @@ DIAMETER_OPTIONS: Final[list[dict[str, str]]] = [
     {"value": "2.85", "label": "2.85 mm"},
 ]
 
+# Total-weight suggestions, most specific match wins:
+#   1. MANUFACTURER_MATERIAL_WEIGHTS[manufacturer][material]
+#   2. MATERIAL_DEFAULT_WEIGHTS[material]
+#   3. DEFAULT_TOTAL_WEIGHT
+#
+# MANUFACTURER_MATERIAL_WEIGHTS starts empty on purpose: real per-manufacturer
+# spool weights vary by product line and change over time, so it should only
+# ever contain values someone has actually verified (e.g. from their own
+# spools) - add entries as you confirm them, in grams:
+#   "Bambu Lab": {"PLA": 1000},
+MANUFACTURER_MATERIAL_WEIGHTS: Final[dict[str, dict[str, int]]] = {}
+
+# Material-only fallback for well-documented, brand-independent industry
+# conventions: flexible (TPU) and water-soluble support material (PVA) are
+# commonly sold in smaller spools than the standard 1000 g across most
+# manufacturers, due to higher cost and printing difficulty. Not a guarantee
+# for any specific product - MANUFACTURER_MATERIAL_WEIGHTS above always wins
+# when a real value is known.
+MATERIAL_DEFAULT_WEIGHTS: Final[dict[str, int]] = {
+    "TPU": 500,
+    "PVA": 500,
+}
+
+
+def suggested_total_weight(manufacturer: str | None, material: str | None) -> int:
+    """Suggest a spool's total weight from its manufacturer and material."""
+    manufacturer = (manufacturer or "").strip()
+    material = (material or "").strip()
+    if manufacturer and material:
+        weight = MANUFACTURER_MATERIAL_WEIGHTS.get(manufacturer, {}).get(material)
+        if weight is not None:
+            return weight
+    if material in MATERIAL_DEFAULT_WEIGHTS:
+        return MATERIAL_DEFAULT_WEIGHTS[material]
+    return DEFAULT_TOTAL_WEIGHT
+
+
 SERVICE_CONSUME_FILAMENT: Final = "consume_filament"
 SERVICE_REFILL_SPOOL: Final = "refill_spool"
 
