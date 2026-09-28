@@ -96,7 +96,11 @@ oder per YAML:
 
 ```yaml
 type: custom:filament-manager-card
+title: Meine Spulen  # optional, per UI-Editor (Stift-Symbol) änderbar
 ```
+
+Der Titel lässt sich auch über den visuellen Karten-Editor setzen (Stift-Symbol
+auf der Karte), ohne YAML zu bearbeiten.
 
 Ein Klick auf eine Spule öffnet deren Detailansicht. Nach einem Update der
 Integration ggf. einmal den Browser-Cache leeren (Strg/Cmd+Shift+R), falls
