@@ -101,17 +101,23 @@ class FilamentManagerCard extends HTMLElement {
     const readHumidity = (entries) => {
       const binarySensorEntry = entries.find((e) => e.entity_id.startsWith("binary_sensor."));
       const binaryState = stateOf(binarySensorEntry && binarySensorEntry.entity_id);
+      // A spool that gets assigned to a filament box leaves its own,
+      // now-superseded humidity alert entity registered but no longer live
+      // (state "unavailable", no attributes) until the integration is
+      // reloaded/updated - treat that the same as "no sensor" rather than
+      // showing a stale/broken badge.
+      const isLive = !!binaryState && "source_entity_id" in binaryState.attributes;
       return {
         // Prefer the linked humidity sensor itself (shows the actual
         // reading and its history) over our on/off binary_sensor as the tap
         // target.
-        humidityEntityId: binaryState ? binaryState.attributes.source_entity_id || binaryState.entity_id : null,
+        humidityEntityId: isLive ? binaryState.attributes.source_entity_id || binaryState.entity_id : null,
         humidityValue:
-          binaryState && typeof binaryState.attributes.current_humidity === "number"
+          isLive && typeof binaryState.attributes.current_humidity === "number"
             ? binaryState.attributes.current_humidity
             : null,
-        humidityAlert: binaryState ? binaryState.state === "on" : false,
-        hasHumiditySensor: !!binarySensorEntry,
+        humidityAlert: isLive ? binaryState.state === "on" : false,
+        hasHumiditySensor: isLive,
       };
     };
 
@@ -213,9 +219,16 @@ class FilamentManagerCard extends HTMLElement {
          </div>`
       : "";
 
+    const swatchColor = swatchFor(spool.color);
+    const isSwatchTransparent = swatchColor === "transparent";
+
     return `
       <div class="row ${indent ? "boxed" : ""}" data-entity="${spool.primaryEntityId || ""}">
-        <span class="swatch" style="background:${swatchFor(spool.color)}" title="${spool.color || ""}"></span>
+        <span
+          class="swatch ${isSwatchTransparent ? "transparent" : ""}"
+          style="${isSwatchTransparent ? "" : `background:${swatchColor}`}"
+          title="${spool.color || ""}"
+        ></span>
         <div class="info">
           <div class="name">${spool.name}</div>
           <div class="meta">${[spool.material, spool.color].filter(Boolean).join(" · ") || "&nbsp;"}</div>
@@ -298,6 +311,18 @@ class FilamentManagerCard extends HTMLElement {
           border-radius: 50%;
           border: 1px solid var(--divider-color);
           flex: none;
+        }
+        /* Checkerboard pattern, like graphics programs use to mark
+           transparency, instead of a plain (indistinguishable) circle. */
+        .swatch.transparent {
+          background-color: #fff;
+          background-image:
+            linear-gradient(45deg, #bbb 25%, transparent 25%),
+            linear-gradient(-45deg, #bbb 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #bbb 75%),
+            linear-gradient(-45deg, transparent 75%, #bbb 75%);
+          background-size: 6px 6px;
+          background-position: 0 0, 0 3px, 3px -3px, -3px 0;
         }
         .info { flex: 1 1 auto; min-width: 0; }
         .name {
