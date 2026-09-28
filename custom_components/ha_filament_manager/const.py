@@ -17,14 +17,14 @@ CONF_HUMIDITY_MAX: Final = "humidity_max"
 CONF_LOW_STOCK_THRESHOLD: Final = "low_stock_threshold"
 CONF_NOTIFY_TARGETS: Final = "notify_targets"
 CONF_PERSISTENT_NOTIFICATION: Final = "persistent_notification"
-CONF_BOX: Final = "box_entry_id"
+# References another subentry's `subentry_id` (a filament box).
+CONF_BOX: Final = "box_subentry_id"
 
-# Stored in a config entry's `data` (fixed at creation, unlike `options`) to
-# tell a filament box entry apart from a spool entry - both are instances of
-# the same integration/config flow.
-CONF_ENTRY_TYPE: Final = "entry_type"
-ENTRY_TYPE_SPOOL: Final = "spool"
-ENTRY_TYPE_BOX: Final = "box"
+# There is exactly one config entry (a singleton hub, see manifest.json's
+# "single_config_entry"); every spool and filament box is a config
+# subentry of it, told apart by ConfigSubentry.subentry_type.
+SUBENTRY_TYPE_SPOOL: Final = "spool"
+SUBENTRY_TYPE_BOX: Final = "box"
 
 # Physical constraint of the filament dry boxes this grouping models: each
 # one holds at most four spools.
@@ -133,9 +133,9 @@ CARD_FILENAME: Final = "filament-manager-card.js"
 CARD_URL_PATH: Final = f"/{DOMAIN}_files/{CARD_FILENAME}"
 # Bump whenever the card's JS changes, to bust browser caching of the
 # static file (independent of the integration's own manifest version).
-CARD_VERSION: Final = "8"
+CARD_VERSION: Final = "9"
 
 
-def signal_spool_updated(entry_id: str) -> str:
+def signal_spool_updated(subentry_id: str) -> str:
     """Return the dispatcher signal name used for a spool's live updates."""
-    return f"{DOMAIN}_{entry_id}_updated"
+    return f"{DOMAIN}_{subentry_id}_updated"

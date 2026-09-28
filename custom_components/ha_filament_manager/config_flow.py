@@ -1,13 +1,17 @@
 """Config flow for the Filament Manager integration.
 
-A config entry represents either a spool or a filament box - the initial
-step is a menu choosing which one to add. Creating a spool is split into
-three steps: identity (material/color/manufacturer), details (diameter,
-total weight - suggested from the identity step - humidity, optionally a
-filament box), then name (suggested from the identity step too). Creating a
-box is a single step (name, optional humidity sensor/notifications).
-Editing either is done through its options flow (the gear icon on the
-entry).
+There is exactly one config entry (a singleton hub, see manifest.json's
+"single_config_entry") - setting it up needs no input at all. Every spool
+and filament box is then managed as a config *subentry* of that hub (via its
+"+ Add" menu and the gear icon on each subentry), so there is only ever one
+integration card under Settings -> Devices & Services.
+
+Creating a spool subentry is split into three steps: identity (material/
+color/manufacturer), details (diameter, total weight - suggested from the
+identity step - humidity, optionally a filament box), then name (suggested
+from the identity step too). Editing an existing spool is a single combined
+step. Creating/editing a box is a single step either way (name, optional
+humidity sensor/notifications).
 """
 from __future__ import annotations
 
@@ -15,17 +19,21 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    ConfigSubentryFlow,
+    SubentryFlowResult,
+)
 from homeassistant.helpers import selector
 
-from .boxes import box_entries, spools_in_box
+from .boxes import box_subentries, spools_in_box
 from .const import (
     COLOR_OPTIONS,
     CONF_BOX,
     CONF_COLOR,
     CONF_DIAMETER,
-    CONF_ENTRY_TYPE,
     CONF_HUMIDITY_MAX,
     CONF_HUMIDITY_SENSOR,
     CONF_INITIAL_REMAINING_WEIGHT,
@@ -40,11 +48,11 @@ from .const import (
     DEFAULT_HUMIDITY_MAX,
     DIAMETER_OPTIONS,
     DOMAIN,
-    ENTRY_TYPE_BOX,
-    ENTRY_TYPE_SPOOL,
     MANUFACTURER_OPTIONS,
     MATERIAL_OPTIONS,
     MAX_SPOOLS_PER_BOX,
+    SUBENTRY_TYPE_BOX,
+    SUBENTRY_TYPE_SPOOL,
     suggested_total_weight,
 )
 
@@ -100,20 +108,20 @@ def _identity_fields(defaults: dict[str, Any], *, include_name: bool) -> dict[An
     return fields
 
 
-def _box_selector_field(hass: HomeAssistant, defaults: dict[str, Any]) -> dict[Any, Any]:
+def _box_selector_field(entry: ConfigEntry, defaults: dict[str, Any]) -> dict[Any, Any]:
     """A spool's (optional) filament box assignment - omitted if none exist yet."""
-    boxes = box_entries(hass)
+    boxes = box_subentries(entry)
     if not boxes:
         return {}
 
-    valid_ids = {box.entry_id for box in boxes}
+    valid_ids = {box.subentry_id for box in boxes}
     current = defaults.get(CONF_BOX)
     box_kwargs = {"default": current} if current in valid_ids else {}
 
     return {
         vol.Optional(CONF_BOX, **box_kwargs): selector.SelectSelector(
             selector.SelectSelectorConfig(
-                options=[{"value": box.entry_id, "label": box.title} for box in boxes],
+                options=[{"value": box.subentry_id, "label": box.title} for box in boxes],
                 mode=selector.SelectSelectorMode.DROPDOWN,
             )
         )
@@ -156,7 +164,7 @@ def _notify_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
     return fields
 
 
-def _details_fields(hass: HomeAssistant, defaults: dict[str, Any], *, include_initial: bool) -> dict[Any, Any]:
+def _details_fields(entry: ConfigEntry, defaults: dict[str, Any], *, include_initial: bool) -> dict[Any, Any]:
     fields: dict[Any, Any] = {}
 
     fields[
@@ -174,7 +182,7 @@ def _details_fields(hass: HomeAssistant, defaults: dict[str, Any], *, include_in
     if include_initial:
         fields[vol.Optional(CONF_INITIAL_REMAINING_WEIGHT)] = _weight_selector()
 
-    fields.update(_box_selector_field(hass, defaults))
+    fields.update(_box_selector_field(entry, defaults))
 
     # Ignored (falls back to a shared alert) once a filament box is assigned
     # above - kept here as a fallback for spools that aren't in a box.
@@ -208,41 +216,56 @@ def _box_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
     return fields
 
 
-def _build_schema(
-    hass: HomeAssistant, defaults: dict[str, Any], *, include_name: bool, include_initial: bool
-) -> vol.Schema:
-    """Combined identity + details schema, used by the (single-step) spool options flow."""
+def _build_reconfigure_schema(entry: ConfigEntry, defaults: dict[str, Any]) -> vol.Schema:
+    """Combined identity + details schema, used by the (single-step) spool reconfigure flow."""
     fields = {
-        **_identity_fields(defaults, include_name=include_name),
-        **_details_fields(hass, defaults, include_initial=include_initial),
+        **_identity_fields(defaults, include_name=True),
+        **_details_fields(entry, defaults, include_initial=False),
     }
     return vol.Schema(fields)
 
 
 class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle creating a new spool or filament box."""
+    """Set up the Filament Manager hub - a singleton with no configuration of its own."""
 
     VERSION = 1
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Create the (only) hub entry. Spools and boxes are added as subentries afterwards."""
+        if user_input is not None:
+            return self.async_create_entry(title="Filament Manager", data={})
+        return self.async_show_form(step_id="user")
+
+    @classmethod
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return the subentry types this hub supports: spools and filament boxes."""
+        return {
+            SUBENTRY_TYPE_SPOOL: SpoolSubentryFlowHandler,
+            SUBENTRY_TYPE_BOX: BoxSubentryFlowHandler,
+        }
+
+
+class SpoolSubentryFlowHandler(ConfigSubentryFlow):
+    """Handle creating or reconfiguring a spool subentry."""
 
     def __init__(self) -> None:
         self._spool_data: dict[str, Any] = {}
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Choose whether to add a spool or a filament box."""
-        return self.async_show_menu(step_id="user", menu_options=["spool", "box"])
-
-    async def async_step_spool(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Collect the spool's identity: material, color, manufacturer."""
         if user_input is not None:
             self._spool_data = user_input
             return await self.async_step_details()
 
         schema = vol.Schema(_identity_fields({}, include_name=False))
-        return self.async_show_form(step_id="spool", data_schema=schema)
+        return self.async_show_form(step_id="user", data_schema=schema)
 
-    async def async_step_details(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_details(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Collect diameter, total weight (suggested from the identity step) and humidity settings."""
         errors: dict[str, str] = {}
+        entry = self._get_entry()
 
         if user_input is not None:
             total_weight = user_input[CONF_TOTAL_WEIGHT]
@@ -253,17 +276,17 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
             box_id = user_input.get(CONF_BOX)
             if initial_remaining > total_weight:
                 errors["base"] = "remaining_exceeds_total"
-            elif box_id and len(spools_in_box(self.hass, box_id)) >= MAX_SPOOLS_PER_BOX:
+            elif box_id and len(spools_in_box(entry, box_id)) >= MAX_SPOOLS_PER_BOX:
                 errors["base"] = "box_full"
             else:
                 user_input[CONF_INITIAL_REMAINING_WEIGHT] = initial_remaining
                 self._spool_data = {**self._spool_data, **user_input}
                 return await self.async_step_name()
 
-        schema = vol.Schema(_details_fields(self.hass, self._spool_data, include_initial=True))
+        schema = vol.Schema(_details_fields(entry, self._spool_data, include_initial=True))
         return self.async_show_form(step_id="details", data_schema=schema, errors=errors)
 
-    async def async_step_name(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_name(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Confirm the spool's name, pre-filled from the identity step's choices."""
         errors: dict[str, str] = {}
 
@@ -272,45 +295,18 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
             if not name:
                 errors["name"] = "name_required"
             else:
-                return self.async_create_entry(
-                    title=name, data={CONF_ENTRY_TYPE: ENTRY_TYPE_SPOOL}, options=self._spool_data
-                )
+                return self.async_create_entry(title=name, data=self._spool_data)
 
         schema = vol.Schema(
             {vol.Required(CONF_NAME, default=_suggest_name(self._spool_data)): selector.TextSelector()}
         )
         return self.async_show_form(step_id="name", data_schema=schema, errors=errors)
 
-    async def async_step_box(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Collect a new filament box's name and optional humidity sensor."""
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Edit an existing spool's details in a single combined step."""
         errors: dict[str, str] = {}
-
-        if user_input is not None:
-            name = user_input.pop(CONF_NAME, "").strip()
-            if not name:
-                errors["name"] = "name_required"
-            else:
-                return self.async_create_entry(
-                    title=name, data={CONF_ENTRY_TYPE: ENTRY_TYPE_BOX}, options=user_input
-                )
-
-        schema = vol.Schema(_box_fields({}))
-        return self.async_show_form(step_id="box", data_schema=schema, errors=errors)
-
-    @staticmethod
-    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
-        """Return the options flow used to edit an existing spool or filament box."""
-        if config_entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_BOX:
-            return FilamentBoxOptionsFlow()
-        return FilamentManagerOptionsFlow()
-
-
-class FilamentManagerOptionsFlow(OptionsFlow):
-    """Handle editing an existing spool's static details."""
-
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Edit the spool's details. Live remaining weight is not editable here."""
-        errors: dict[str, str] = {}
+        entry = self._get_entry()
+        subentry = self._get_reconfigure_subentry()
 
         if user_input is not None:
             name = user_input.pop(CONF_NAME, "").strip()
@@ -319,32 +315,23 @@ class FilamentManagerOptionsFlow(OptionsFlow):
                 errors["name"] = "name_required"
             elif (
                 box_id
-                and len(spools_in_box(self.hass, box_id, exclude_entry_id=self.config_entry.entry_id))
+                and len(spools_in_box(entry, box_id, exclude_subentry_id=subentry.subentry_id))
                 >= MAX_SPOOLS_PER_BOX
             ):
                 errors["base"] = "box_full"
             else:
-                self.hass.config_entries.async_update_entry(self.config_entry, title=name)
-                return self.async_create_entry(title="", data=user_input)
+                return self.async_update_and_abort(entry, subentry, title=name, data=user_input)
 
-        defaults = {CONF_NAME: self.config_entry.title, **self.config_entry.options}
-        schema = _build_schema(self.hass, defaults, include_name=True, include_initial=False)
-        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+        defaults = {CONF_NAME: subentry.title, **subentry.data}
+        schema = _build_reconfigure_schema(entry, defaults)
+        return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)
 
 
-class FilamentBoxOptionsFlow(OptionsFlow):
-    """Handle editing an existing filament box."""
+class BoxSubentryFlowHandler(ConfigSubentryFlow):
+    """Handle creating or reconfiguring a filament box subentry."""
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Entry point mandated by OptionsFlow - delegates to the box's own step id.
-
-        Using a step id other than "init" here lets the box's edit form have
-        its own translation strings, distinct from a spool's.
-        """
-        return await self.async_step_edit_box(user_input)
-
-    async def async_step_edit_box(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Edit the box's name and humidity settings."""
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Collect a new filament box's name and optional humidity sensor."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -352,9 +339,23 @@ class FilamentBoxOptionsFlow(OptionsFlow):
             if not name:
                 errors["name"] = "name_required"
             else:
-                self.hass.config_entries.async_update_entry(self.config_entry, title=name)
-                return self.async_create_entry(title="", data=user_input)
+                return self.async_create_entry(title=name, data=user_input)
 
-        defaults = {CONF_NAME: self.config_entry.title, **self.config_entry.options}
+        schema = vol.Schema(_box_fields({}))
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Edit an existing box's name and humidity settings."""
+        errors: dict[str, str] = {}
+        subentry = self._get_reconfigure_subentry()
+
+        if user_input is not None:
+            name = user_input.pop(CONF_NAME, "").strip()
+            if not name:
+                errors["name"] = "name_required"
+            else:
+                return self.async_update_and_abort(self._get_entry(), subentry, title=name, data=user_input)
+
+        defaults = {CONF_NAME: subentry.title, **subentry.data}
         schema = vol.Schema(_box_fields(defaults))
-        return self.async_show_form(step_id="edit_box", data_schema=schema, errors=errors)
+        return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)

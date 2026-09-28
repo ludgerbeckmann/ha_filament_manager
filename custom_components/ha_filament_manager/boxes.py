@@ -1,29 +1,26 @@
-"""Shared helpers for grouping spools into filament boxes."""
+"""Shared helpers for grouping spool subentries into filament box subentries."""
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 
-from .const import CONF_BOX, CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_BOX, ENTRY_TYPE_SPOOL
+from .const import CONF_BOX, SUBENTRY_TYPE_BOX, SUBENTRY_TYPE_SPOOL
 
 
-def box_entries(hass: HomeAssistant) -> list[ConfigEntry]:
-    """Return all configured filament box entries."""
+def box_subentries(entry: ConfigEntry) -> list[ConfigSubentry]:
+    """Return all filament box subentries of the hub entry."""
     return [
-        entry
-        for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_BOX
+        subentry for subentry in entry.subentries.values() if subentry.subentry_type == SUBENTRY_TYPE_BOX
     ]
 
 
 def spools_in_box(
-    hass: HomeAssistant, box_entry_id: str, *, exclude_entry_id: str | None = None
-) -> list[ConfigEntry]:
-    """Return the spool entries currently assigned to the given box."""
+    entry: ConfigEntry, box_subentry_id: str, *, exclude_subentry_id: str | None = None
+) -> list[ConfigSubentry]:
+    """Return the spool subentries currently assigned to the given box."""
     return [
-        entry
-        for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.data.get(CONF_ENTRY_TYPE, ENTRY_TYPE_SPOOL) == ENTRY_TYPE_SPOOL
-        and entry.options.get(CONF_BOX) == box_entry_id
-        and entry.entry_id != exclude_entry_id
+        subentry
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type == SUBENTRY_TYPE_SPOOL
+        and subentry.data.get(CONF_BOX) == box_subentry_id
+        and subentry.subentry_id != exclude_subentry_id
     ]

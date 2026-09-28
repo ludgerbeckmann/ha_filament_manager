@@ -2,100 +2,112 @@
   "config": {
     "step": {
       "user": {
-        "title": "Zum Filament Manager hinzufügen",
-        "description": "Was möchtest du hinzufügen?",
-        "menu_options": {
-          "spool": "Eine Filamentspule",
-          "box": "Eine Filamentbox (gruppiert bis zu 4 Spulen, z. B. eine Trockenbox)"
-        }
-      },
-      "spool": {
-        "title": "Filamentspule hinzufügen",
-        "description": "Um welche Art Spule handelt es sich?",
-        "data": {
-          "material": "Material",
-          "color": "Farbe",
-          "manufacturer": "Hersteller"
-        }
-      },
-      "details": {
-        "title": "Details zur Spule",
-        "description": "Das Gesamtgewicht wird - falls für Material/Hersteller bekannt - vorgeschlagen, sonst ein generischer Standardwert. Immer frei anpassbar.",
-        "data": {
-          "diameter": "Durchmesser",
-          "total_weight": "Gesamtgewicht (neue Spule)",
-          "initial_remaining_weight": "Aktuelle Restmenge",
-          "box_entry_id": "Filamentbox (optional)",
-          "humidity_sensor": "Luftfeuchtigkeitssensor (optional, wird ignoriert, wenn oben eine Filamentbox ausgewählt ist)",
-          "humidity_max": "Maximale Luftfeuchtigkeit",
-          "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
-          "notify_targets": "Benachrichtigen (optional)",
-          "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
-        }
-      },
-      "name": {
-        "title": "Spule benennen",
-        "description": "Vorschlag basierend auf Material, Farbe und Hersteller - kann beliebig angepasst werden.",
-        "data": {
-          "name": "Name"
-        }
-      },
-      "box": {
-        "title": "Filamentbox hinzufügen",
-        "description": "Eine Filamentbox gruppiert bis zu 4 Spulen (z. B. eine Trockenbox) und kann einen gemeinsamen Luftfeuchtigkeitssensor für alle hinterlegten Spulen tragen.",
-        "data": {
-          "name": "Name",
-          "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
-          "humidity_max": "Maximale Luftfeuchtigkeit",
-          "notify_targets": "Benachrichtigen (optional)",
-          "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
-        }
+        "title": "Filament Manager einrichten",
+        "description": "Filamentspulen und -boxen werden anschließend über diesen Integrationseintrag hinzugefügt (Schaltfläche „+ Hinzufügen“)."
       }
-    },
-    "error": {
-      "name_required": "Bitte gib einen Namen ein.",
-      "remaining_exceeds_total": "Die Restmenge darf nicht größer als das Gesamtgewicht sein.",
-      "box_full": "Diese Filamentbox ist bereits voll (max. 4 Spulen)."
-    },
-    "abort": {
-      "already_configured": "Diese Spule ist bereits konfiguriert."
     }
   },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Spule bearbeiten",
-        "description": "Aktualisiere die Eigenschaften der Spule. Die Restmenge änderst du über die entsprechende Entität oder die Dienste consume_filament / refill_spool.",
-        "data": {
-          "name": "Name",
-          "material": "Material",
-          "color": "Farbe",
-          "manufacturer": "Hersteller",
-          "diameter": "Durchmesser",
-          "total_weight": "Gesamtgewicht (neue Spule)",
-          "box_entry_id": "Filamentbox (optional)",
-          "humidity_sensor": "Luftfeuchtigkeitssensor (optional, wird ignoriert, wenn oben eine Filamentbox ausgewählt ist)",
-          "humidity_max": "Maximale Luftfeuchtigkeit",
-          "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
-          "notify_targets": "Benachrichtigen (optional)",
-          "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
+  "config_subentries": {
+    "spool": {
+      "entry_type": "Filamentspule",
+      "initiate_flow": {
+        "user": "Spule hinzufügen"
+      },
+      "step": {
+        "user": {
+          "title": "Filamentspule hinzufügen",
+          "description": "Um welche Art Spule handelt es sich?",
+          "data": {
+            "material": "Material",
+            "color": "Farbe",
+            "manufacturer": "Hersteller"
+          }
+        },
+        "details": {
+          "title": "Details zur Spule",
+          "description": "Das Gesamtgewicht wird - falls für Material/Hersteller bekannt - vorgeschlagen, sonst ein generischer Standardwert. Immer frei anpassbar.",
+          "data": {
+            "diameter": "Durchmesser",
+            "total_weight": "Gesamtgewicht (neue Spule)",
+            "initial_remaining_weight": "Aktuelle Restmenge",
+            "box_subentry_id": "Filamentbox (optional)",
+            "humidity_sensor": "Luftfeuchtigkeitssensor (optional, wird ignoriert, wenn oben eine Filamentbox ausgewählt ist)",
+            "humidity_max": "Maximale Luftfeuchtigkeit",
+            "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
+            "notify_targets": "Benachrichtigen (optional)",
+            "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
+          }
+        },
+        "name": {
+          "title": "Spule benennen",
+          "description": "Vorschlag basierend auf Material, Farbe und Hersteller - kann beliebig angepasst werden.",
+          "data": {
+            "name": "Name"
+          }
+        },
+        "reconfigure": {
+          "title": "Spule bearbeiten",
+          "description": "Aktualisiere die Eigenschaften der Spule. Die Restmenge änderst du über die entsprechende Entität oder die Dienste consume_filament / refill_spool.",
+          "data": {
+            "name": "Name",
+            "material": "Material",
+            "color": "Farbe",
+            "manufacturer": "Hersteller",
+            "diameter": "Durchmesser",
+            "total_weight": "Gesamtgewicht (neue Spule)",
+            "box_subentry_id": "Filamentbox (optional)",
+            "humidity_sensor": "Luftfeuchtigkeitssensor (optional, wird ignoriert, wenn oben eine Filamentbox ausgewählt ist)",
+            "humidity_max": "Maximale Luftfeuchtigkeit",
+            "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
+            "notify_targets": "Benachrichtigen (optional)",
+            "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
+          }
         }
       },
-      "edit_box": {
-        "title": "Filamentbox bearbeiten",
-        "description": "Aktualisiere den Namen und die Luftfeuchtigkeitseinstellungen der Box.",
-        "data": {
-          "name": "Name",
-          "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
-          "humidity_max": "Maximale Luftfeuchtigkeit",
-          "notify_targets": "Benachrichtigen (optional)",
-          "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
-        }
+      "error": {
+        "name_required": "Bitte gib einen Namen für die Spule ein.",
+        "remaining_exceeds_total": "Die Restmenge darf nicht größer als das Gesamtgewicht sein.",
+        "box_full": "Diese Filamentbox ist bereits voll (max. 4 Spulen)."
+      },
+      "abort": {
+        "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
       }
     },
-    "error": {
-      "name_required": "Bitte gib einen Namen ein.",
-      "box_full": "Diese Filamentbox ist bereits voll (max. 4 Spulen)."
+    "box": {
+      "entry_type": "Filamentbox",
+      "initiate_flow": {
+        "user": "Filamentbox hinzufügen"
+      },
+      "step": {
+        "user": {
+          "title": "Filamentbox hinzufügen",
+          "description": "Eine Filamentbox gruppiert bis zu 4 Spulen (z. B. eine Trockenbox) und kann einen gemeinsamen Luftfeuchtigkeitssensor für alle hinterlegten Spulen tragen.",
+          "data": {
+            "name": "Name",
+            "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
+            "humidity_max": "Maximale Luftfeuchtigkeit",
+            "notify_targets": "Benachrichtigen (optional)",
+            "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
+          }
+        },
+        "reconfigure": {
+          "title": "Filamentbox bearbeiten",
+          "description": "Aktualisiere den Namen und die Luftfeuchtigkeitseinstellungen der Box.",
+          "data": {
+            "name": "Name",
+            "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
+            "humidity_max": "Maximale Luftfeuchtigkeit",
+            "notify_targets": "Benachrichtigen (optional)",
+            "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
+          }
+        }
+      },
+      "error": {
+        "name_required": "Bitte gib einen Namen für die Box ein."
+      },
+      "abort": {
+        "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+      }
     }
   },
   "entity": {

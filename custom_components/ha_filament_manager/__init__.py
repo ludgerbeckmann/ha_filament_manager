@@ -1,11 +1,12 @@
 """The Filament Manager integration.
 
-Each config entry represents either one filament spool or one filament box
-(a physical dry box grouping up to four spools, see boxes.py) - both are
-instances of the same integration, told apart by CONF_ENTRY_TYPE. A spool's
-live state (remaining weight) is kept in ``entry.runtime_data`` so it can be
-shared between the editable number entity and the read-only percentage
-sensor without re-deriving it from entity state lookups.
+There is exactly one config entry (a singleton hub - see manifest.json's
+"single_config_entry"). Every filament spool and filament box is a config
+subentry of it (see boxes.py and config_flow.py), each still getting its own
+device and entities. A spool's live state (remaining weight) is kept in
+``entry.runtime_data``, keyed by its subentry id, so it can be shared between
+the editable number entity and the read-only percentage sensor without
+re-deriving it from entity state lookups.
 """
 from __future__ import annotations
 
@@ -23,20 +24,12 @@ from .const import (
     CARD_FILENAME,
     CARD_URL_PATH,
     CARD_VERSION,
-    CONF_ENTRY_TYPE,
     CONF_INITIAL_REMAINING_WEIGHT,
     CONF_TOTAL_WEIGHT,
-    ENTRY_TYPE_BOX,
+    SUBENTRY_TYPE_SPOOL,
 )
 
 PLATFORMS: list[Platform] = [Platform.NUMBER, Platform.SENSOR, Platform.BINARY_SENSOR]
-# A filament box only ever hosts a shared humidity alert - it has no weight,
-# material or color of its own.
-BOX_PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR]
-
-
-def _platforms_for(entry: ConfigEntry) -> list[Platform]:
-    return BOX_PLATFORMS if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_BOX else PLATFORMS
 
 
 @dataclass
@@ -50,7 +43,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Serve the bundled Lovelace overview card and register it with the frontend.
 
     Runs once for the whole integration (unlike async_setup_entry, which runs
-    per spool), so the card is available even before any spool is configured.
+    for the hub entry), so the card is available even before the hub is set up.
     """
     card_path = Path(__file__).parent / "www" / CARD_FILENAME
     await hass.http.async_register_static_paths(
@@ -61,23 +54,26 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up a spool or filament box from a config entry."""
-    if entry.data.get(CONF_ENTRY_TYPE) != ENTRY_TYPE_BOX:
-        entry.runtime_data = SpoolRuntimeData(
-            remaining_weight=entry.options.get(
-                CONF_INITIAL_REMAINING_WEIGHT, entry.options[CONF_TOTAL_WEIGHT]
+    """Set up the hub entry and every spool/box subentry it currently holds."""
+    entry.runtime_data = {
+        subentry_id: SpoolRuntimeData(
+            remaining_weight=subentry.data.get(
+                CONF_INITIAL_REMAINING_WEIGHT, subentry.data[CONF_TOTAL_WEIGHT]
             )
         )
+        for subentry_id, subentry in entry.subentries.items()
+        if subentry.subentry_type == SUBENTRY_TYPE_SPOOL
+    }
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
-    await hass.config_entries.async_forward_entry_setups(entry, _platforms_for(entry))
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the entry when its options are edited."""
+    """Reload the entry whenever a spool/box subentry is added, edited or removed."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a spool's or filament box's config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, _platforms_for(entry))
+    """Unload the hub's config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
