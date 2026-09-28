@@ -10,6 +10,7 @@ from __future__ import annotations
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -23,6 +24,7 @@ from .const import (
     CONF_LOW_STOCK_THRESHOLD,
     CONF_TOTAL_WEIGHT,
     DEFAULT_HUMIDITY_MAX,
+    DOMAIN,
     ENTRY_TYPE_BOX,
     signal_spool_updated,
 )
@@ -43,15 +45,29 @@ async def async_setup_entry(
     else:
         humidity_sensor = entry.options.get(CONF_HUMIDITY_SENSOR)
         # A spool assigned to a box is monitored by the box's own humidity
-        # sensor instead - its own (if still configured) is ignored.
-        if humidity_sensor and not entry.options.get(CONF_BOX):
+        # sensor instead - its own (if still configured) is ignored, and any
+        # entity left over from before it was assigned is removed (it would
+        # otherwise linger as a stale, "unavailable" registry entry that
+        # still shows up on the overview card).
+        has_box = bool(entry.options.get(CONF_BOX))
+        if humidity_sensor and not has_box:
             entities.append(FilamentHumidityAlert(entry, humidity_sensor, device_info=spool_device_info(entry)))
+        elif has_box:
+            _async_remove_humidity_alert_entity(hass, entry)
 
         if entry.options.get(CONF_LOW_STOCK_THRESHOLD) is not None:
             entities.append(FilamentLowStockAlert(entry))
 
     if entities:
         async_add_entities(entities)
+
+
+def _async_remove_humidity_alert_entity(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove a spool's own humidity alert entity, now superseded by its box."""
+    registry = er.async_get(hass)
+    unique_id = f"{entry.entry_id}_humidity_alert"
+    if (entity_id := registry.async_get_entity_id("binary_sensor", DOMAIN, unique_id)) is not None:
+        registry.async_remove(entity_id)
 
 
 class FilamentHumidityAlert(BinarySensorEntity):

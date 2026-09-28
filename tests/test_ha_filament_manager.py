@@ -352,6 +352,33 @@ async def test_spool_in_box_uses_box_humidity_not_its_own(hass: HomeAssistant) -
     assert spool_device.via_device_id == box_device.id
 
 
+async def test_assigning_a_box_removes_the_spools_own_stale_humidity_entity(hass: HomeAssistant) -> None:
+    """A spool's own humidity alert must not linger as a stale registry entry.
+
+    Otherwise it would keep showing up (as an "unavailable" ghost) on the
+    overview card even though the box now owns humidity monitoring for it.
+    """
+    hass.states.async_set("sensor.spool_own_humidity", "10")
+    await hass.async_block_till_done()
+
+    spool_entry = await _setup_entry(hass, **{CONF_HUMIDITY_SENSOR: "sensor.spool_own_humidity"})
+
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    alert_entity = "binary_sensor.test_spool_humidity_alert"
+    assert registry.async_get(alert_entity) is not None
+
+    box = await _add_box(hass)
+    hass.config_entries.async_update_entry(
+        spool_entry, options={**spool_entry.options, CONF_BOX: box.entry_id}
+    )
+    await hass.async_block_till_done()
+
+    assert registry.async_get(alert_entity) is None
+    assert hass.states.get(alert_entity) is None
+
+
 async def test_box_full_rejects_a_fifth_spool(hass: HomeAssistant) -> None:
     box = await _add_box(hass)
 
