@@ -21,6 +21,11 @@ schlanke, native Home-Assistant-Integration ohne externen Server.
   hinterlegt werden (z. B. ein Hygrometer in der Trockenbox). Überschreitet
   die gemessene Luftfeuchtigkeit den konfigurierten Grenzwert, schaltet ein
   `binary_sensor` auf "Warnung".
+- Optional außerdem eine **Warnung bei niedrigem Bestand** (Schwellwert in %
+  frei wählbar).
+- Beide Warnungen können automatisch **Push-Benachrichtigungen** verschicken
+  und/oder eine **dauerhafte Benachrichtigung** im Dashboard anzeigen –
+  keine eigene Automation nötig (siehe "Benachrichtigungen" unten).
 - Bringt eine eigene **Lovelace-Übersichtskarte** mit, die automatisch alle
   Spulen anzeigt – keine YAML-Konfiguration oder zusätzliche Ressource
   nötig, siehe unten.
@@ -56,7 +61,10 @@ Jede **Spule** wird als eigene Instanz der Integration angelegt:
    einer hinterlegt ist, sonst mit einem branchenüblichen Standardwert (z. B.
    500 g für TPU/PVA, sonst 1000 g) – in jedem Fall frei überschreibbar.
 4. Optional einen Luftfeuchtigkeitssensor und einen Grenzwert (Standard 40 %)
-   hinterlegen.
+   hinterlegen, optional einen Schwellwert für die Bestandswarnung (z. B.
+   15 %), und optional ein oder mehrere Notify-Ziele sowie ob zusätzlich
+   eine dauerhafte Benachrichtigung angezeigt werden soll (siehe
+   "Benachrichtigungen" unten).
 5. Im letzten Schritt einen Namen vergeben – vorbelegt mit einem Vorschlag
    aus Hersteller, Material und Farbe (z. B. "Prusament PETG Rot"), kann
    aber beliebig angepasst werden.
@@ -82,6 +90,7 @@ usw.). Die Restmenge wird dort bewusst nicht verändert – dafür gibt es die
 | `sensor.<spule>_material` | Materialtyp (z. B. PLA, PETG) |
 | `sensor.<spule>_color` | Farbe |
 | `binary_sensor.<spule>_humidity_alert` | Nur vorhanden, wenn ein Luftfeuchtigkeitssensor hinterlegt wurde |
+| `binary_sensor.<spule>_low_stock_alert` | Nur vorhanden, wenn ein Bestandsschwellwert hinterlegt wurde |
 
 ## Dienste
 
@@ -91,6 +100,22 @@ usw.). Die Restmenge wird dort bewusst nicht verändert – dafür gibt es die
 - `ha_filament_manager.refill_spool` – setzt die Restmenge zurück (Feld
   `amount`, ohne Angabe wird auf das Gesamtgewicht zurückgesetzt) – z. B.
   beim Einlegen einer neuen Spule.
+
+## Benachrichtigungen
+
+Sowohl die Luftfeuchtigkeits- als auch die Bestandswarnung können pro Spule
+automatisch benachrichtigen, sobald der jeweilige `binary_sensor` von "aus"
+auf "an" wechselt (keine eigene Automation nötig):
+
+- **Push-Benachrichtigung**: ein oder mehrere Notify-Ziele auswählbar (z. B.
+  `notify.mobile_app_dein_handy`).
+- **Dauerhafte Benachrichtigung**: zusätzlich als Karte im Dashboard
+  (*Einstellungen → Benachrichtigungen*), wird automatisch wieder entfernt,
+  sobald der Warnzustand endet (z. B. Luftfeuchtigkeit wieder unter dem
+  Grenzwert, oder Spule aufgefüllt).
+
+Beide Kanäle sind optional und unabhängig voneinander zuschaltbar, über das
+Zahnrad-Symbol der jeweiligen Spule nachträglich änderbar.
 
 ## Dashboard-Karte
 

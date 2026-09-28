@@ -9,7 +9,10 @@ from custom_components.ha_filament_manager.const import (
     CONF_HUMIDITY_MAX,
     CONF_HUMIDITY_SENSOR,
     CONF_INITIAL_REMAINING_WEIGHT,
+    CONF_LOW_STOCK_THRESHOLD,
     CONF_MATERIAL,
+    CONF_NOTIFY_TARGETS,
+    CONF_PERSISTENT_NOTIFICATION,
     CONF_TOTAL_WEIGHT,
     DOMAIN,
 )
@@ -184,6 +187,80 @@ async def test_humidity_alert_tracks_source_sensor(hass: HomeAssistant) -> None:
     state = hass.states.get(alert_entity)
     assert state.state == "on"
     assert state.attributes["current_humidity"] == 55.0
+
+
+async def test_low_stock_alert_not_created_without_threshold(hass: HomeAssistant) -> None:
+    await _setup_entry(hass)
+    assert hass.states.get("binary_sensor.test_spool_low_stock_alert") is None
+
+
+async def test_low_stock_alert_tracks_threshold(hass: HomeAssistant) -> None:
+    await _setup_entry(hass, **{CONF_LOW_STOCK_THRESHOLD: 20})
+    alert_entity = "binary_sensor.test_spool_low_stock_alert"
+
+    state = hass.states.get(alert_entity)
+    assert state is not None
+    assert state.state == "off"  # 75% remaining, above the 20% threshold
+
+    await hass.services.async_call(
+        DOMAIN, "consume_filament", {"entity_id": NUMBER_ENTITY, "amount": 650}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get(alert_entity)
+    assert state.state == "on"  # 10% remaining, below the 20% threshold
+    assert state.attributes["remaining_percentage"] == 10.0
+
+
+async def test_alerts_notify_and_dismiss(hass: HomeAssistant) -> None:
+    sent_messages = []
+
+    async def _fake_send_message(call):
+        sent_messages.append(dict(call.data))
+
+    hass.services.async_register("notify", "send_message", _fake_send_message)
+
+    from homeassistant.components import persistent_notification as pn
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+    notification_events = []
+    async_dispatcher_connect(
+        hass,
+        pn.SIGNAL_PERSISTENT_NOTIFICATIONS_UPDATED,
+        lambda update_type, notifications: notification_events.append((update_type, notifications)),
+    )
+
+    hass.states.async_set("sensor.dry_box_humidity", "30")
+    await hass.async_block_till_done()
+
+    await _setup_entry(
+        hass,
+        **{
+            CONF_HUMIDITY_SENSOR: "sensor.dry_box_humidity",
+            CONF_HUMIDITY_MAX: 40,
+            CONF_NOTIFY_TARGETS: ["notify.fake_target"],
+            CONF_PERSISTENT_NOTIFICATION: True,
+        },
+    )
+
+    hass.states.async_set("sensor.dry_box_humidity", "55")
+    await hass.async_block_till_done()
+
+    assert len(sent_messages) == 1
+    assert sent_messages[0]["entity_id"] == "notify.fake_target"
+    assert "55" in sent_messages[0]["message"]
+
+    added = [e for e in notification_events if e[0] == pn.UpdateType.ADDED]
+    assert len(added) == 1
+
+    hass.states.async_set("sensor.dry_box_humidity", "30")
+    await hass.async_block_till_done()
+
+    # No new push notification on the falling edge, but the persistent
+    # notification is cleared.
+    assert len(sent_messages) == 1
+    removed = [e for e in notification_events if e[0] == pn.UpdateType.REMOVED]
+    assert len(removed) == 1
 
 
 async def test_overview_card_is_served_and_registered(hass: HomeAssistant, hass_client) -> None:

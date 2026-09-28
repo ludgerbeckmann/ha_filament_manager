@@ -23,9 +23,12 @@ from .const import (
     CONF_HUMIDITY_MAX,
     CONF_HUMIDITY_SENSOR,
     CONF_INITIAL_REMAINING_WEIGHT,
+    CONF_LOW_STOCK_THRESHOLD,
     CONF_MANUFACTURER,
     CONF_MATERIAL,
     CONF_NAME,
+    CONF_NOTIFY_TARGETS,
+    CONF_PERSISTENT_NOTIFICATION,
     CONF_TOTAL_WEIGHT,
     DEFAULT_DIAMETER,
     DEFAULT_HUMIDITY_MAX,
@@ -119,6 +122,30 @@ def _details_fields(defaults: dict[str, Any], *, include_initial: bool) -> dict[
             min=0, max=100, step=1, unit_of_measurement="%", mode=selector.NumberSelectorMode.BOX
         )
     )
+
+    # No default on purpose: presence of a value is what enables the
+    # low-stock binary sensor for this spool, mirroring how CONF_HUMIDITY_SENSOR
+    # gates the humidity alert above.
+    low_stock_kwargs = (
+        {"default": defaults[CONF_LOW_STOCK_THRESHOLD]}
+        if defaults.get(CONF_LOW_STOCK_THRESHOLD) is not None
+        else {}
+    )
+    fields[vol.Optional(CONF_LOW_STOCK_THRESHOLD, **low_stock_kwargs)] = selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=0, max=100, step=1, unit_of_measurement="%", mode=selector.NumberSelectorMode.BOX
+        )
+    )
+
+    notify_targets_kwargs = (
+        {"default": defaults[CONF_NOTIFY_TARGETS]} if defaults.get(CONF_NOTIFY_TARGETS) else {}
+    )
+    fields[vol.Optional(CONF_NOTIFY_TARGETS, **notify_targets_kwargs)] = selector.EntitySelector(
+        selector.EntitySelectorConfig(domain="notify", multiple=True)
+    )
+    fields[
+        vol.Optional(CONF_PERSISTENT_NOTIFICATION, default=defaults.get(CONF_PERSISTENT_NOTIFICATION, False))
+    ] = selector.BooleanSelector()
 
     return fields
 

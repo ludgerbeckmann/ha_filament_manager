@@ -14,6 +14,9 @@ CONF_TOTAL_WEIGHT: Final = "total_weight"
 CONF_INITIAL_REMAINING_WEIGHT: Final = "initial_remaining_weight"
 CONF_HUMIDITY_SENSOR: Final = "humidity_sensor"
 CONF_HUMIDITY_MAX: Final = "humidity_max"
+CONF_LOW_STOCK_THRESHOLD: Final = "low_stock_threshold"
+CONF_NOTIFY_TARGETS: Final = "notify_targets"
+CONF_PERSISTENT_NOTIFICATION: Final = "persistent_notification"
 
 DEFAULT_TOTAL_WEIGHT: Final = 1000
 DEFAULT_HUMIDITY_MAX: Final = 40
