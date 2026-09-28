@@ -347,7 +347,7 @@ class FilamentManagerCard extends HTMLElement {
         .box-toggle { --mdc-icon-size: 20px; flex: none; }
         .box-icon { --mdc-icon-size: 18px; }
         .box-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .box-swatches { display: flex; align-items: center; gap: 3px; flex: none; }
+        .box-swatches { display: flex; align-items: center; gap: 3px; margin-right: 6px; flex: none; }
         .mini-swatch {
           width: 10px;
           height: 10px;
@@ -483,22 +483,23 @@ window.customCards.push({
   preview: false,
 });
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char])
-  );
-}
-
 /**
  * Minimal visual editor: just the (optional) card title, so Lovelace's
  * "Visual editor not supported" fallback notice no longer shows up. Uses
  * <ha-textfield>, which the frontend has already registered globally by the
  * time a card editor can open - no import needed.
+ *
+ * The shadow DOM is built exactly once and the field's value is only synced
+ * afterwards (skipped while it has focus). Rebuilding the whole form's
+ * innerHTML on every keystroke - which setConfig() receives right back from
+ * Lovelace after each config-changed event - would otherwise steal focus
+ * from the field after every single character, making the title appear
+ * impossible to edit.
  */
 class FilamentManagerCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
-    this._render();
+    this._renderOrSync();
   }
 
   set hass(hass) {
@@ -506,30 +507,40 @@ class FilamentManagerCardEditor extends HTMLElement {
   }
 
   connectedCallback() {
-    this._render();
+    this._renderOrSync();
   }
 
-  _render() {
+  _renderOrSync() {
     if (!this._config) return;
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
+      this._renderShell();
     }
+    this._syncField();
+  }
 
+  _renderShell() {
     this.shadowRoot.innerHTML = `
       <style>
         .form { padding: 16px 0; }
         ha-textfield { display: block; }
       </style>
       <div class="form">
-        <ha-textfield
-          label="Titel (leer lassen für „Filament Manager“)"
-          value="${escapeHtml(this._config.title || "")}"
-        ></ha-textfield>
+        <ha-textfield label="Titel (leer lassen für „Filament Manager“)"></ha-textfield>
       </div>
     `;
 
     const field = this.shadowRoot.querySelector("ha-textfield");
     field.addEventListener("input", (event) => this._titleChanged(event));
+  }
+
+  _syncField() {
+    const field = this.shadowRoot.querySelector("ha-textfield");
+    if (!field || this.shadowRoot.activeElement === field) return;
+    const desired = this._config.title || "";
+    if (field.value !== desired) {
+      field.value = desired;
+    }
   }
 
   _titleChanged(event) {
