@@ -42,6 +42,14 @@ function percentTone(percent) {
 }
 
 class FilamentManagerCard extends HTMLElement {
+  constructor() {
+    super();
+    // Which boxes are collapsed (by device id), so their spools are hidden
+    // and only the header row (name + a small dot per spool's color) shows.
+    // UI-only state, deliberately not part of `_data`/`_lastSignature`.
+    this._collapsedBoxes = new Set();
+  }
+
   setConfig(config) {
     this._config = config || {};
   }
@@ -53,7 +61,11 @@ class FilamentManagerCard extends HTMLElement {
 
   getCardSize() {
     const data = this._data || { boxes: [], ungrouped: [] };
-    const rows = data.boxes.reduce((sum, box) => sum + 1 + box.spools.length, 0) + data.ungrouped.length;
+    const rows =
+      data.boxes.reduce(
+        (sum, box) => sum + (this._collapsedBoxes.has(box.deviceId) ? 1 : 1 + box.spools.length),
+        0
+      ) + data.ungrouped.length;
     return Math.max(1, rows) + 1;
   }
 
@@ -243,6 +255,8 @@ class FilamentManagerCard extends HTMLElement {
   }
 
   _renderBoxSection(box) {
+    const isCollapsed = this._collapsedBoxes.has(box.deviceId);
+
     const humidityValueLabel = box.humidityValue !== null ? `${box.humidityValue}%` : "–";
     const humidityBadge = box.hasHumiditySensor
       ? `<span class="box-humidity ${box.humidityAlert ? "alert" : ""}">
@@ -251,13 +265,38 @@ class FilamentManagerCard extends HTMLElement {
          </span>`
       : "";
 
+    // Collapsed: a small dot per spool stands in for the hidden rows, so the
+    // box's contents are still visible at a glance.
+    const spoolSwatches = isCollapsed
+      ? `<div class="box-swatches">
+           ${box.spools
+             .map((spool) => {
+               const color = swatchFor(spool.color);
+               const isTransparent = color === "transparent";
+               return `<span
+                 class="mini-swatch ${isTransparent ? "transparent" : ""}"
+                 style="${isTransparent ? "" : `background:${color}`}"
+                 title="${spool.name}"
+               ></span>`;
+             })
+             .join("")}
+         </div>`
+      : "";
+
     return `
       <div class="box-header" data-entity="${box.humidityEntityId || ""}">
+        <ha-icon
+          class="box-toggle"
+          data-toggle-box="${box.deviceId}"
+          icon="${isCollapsed ? "mdi:chevron-right" : "mdi:chevron-down"}"
+          title="${isCollapsed ? "Spulen anzeigen" : "Spulen ausblenden"}"
+        ></ha-icon>
         <ha-icon class="box-icon" icon="mdi:archive-outline"></ha-icon>
         <span class="box-name">${box.name}</span>
+        ${spoolSwatches}
         ${humidityBadge}
       </div>
-      ${box.spools.map((spool) => this._renderSpoolRow(spool, { indent: true })).join("")}
+      ${isCollapsed ? "" : box.spools.map((spool) => this._renderSpoolRow(spool, { indent: true })).join("")}
     `;
   }
 
@@ -300,8 +339,27 @@ class FilamentManagerCard extends HTMLElement {
           font-weight: 500;
           cursor: pointer;
         }
+        .box-toggle { --mdc-icon-size: 20px; flex: none; }
         .box-icon { --mdc-icon-size: 18px; }
         .box-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .box-swatches { display: flex; align-items: center; gap: 3px; flex: none; }
+        .mini-swatch {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          border: 1px solid var(--divider-color);
+          flex: none;
+        }
+        .mini-swatch.transparent {
+          background-color: #fff;
+          background-image:
+            linear-gradient(45deg, #bbb 25%, transparent 25%),
+            linear-gradient(-45deg, #bbb 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #bbb 75%),
+            linear-gradient(-45deg, transparent 75%, #bbb 75%);
+          background-size: 4px 4px;
+          background-position: 0 0, 0 2px, 2px -2px, -2px 0;
+        }
         .box-humidity { display: flex; align-items: center; gap: 4px; font-size: 0.85em; flex: none; }
         .box-humidity ha-icon { --mdc-icon-size: 16px; }
         .box-humidity.alert { color: var(--error-color, #db4437); }
@@ -391,6 +449,21 @@ class FilamentManagerCard extends HTMLElement {
       const entityId = header.getAttribute("data-entity");
       if (!entityId) return;
       header.addEventListener("click", () => this._openMoreInfo(entityId));
+    });
+
+    // The collapse toggle must stop its click from also bubbling to the
+    // header (which would otherwise open the humidity sensor's more-info).
+    this.shadowRoot.querySelectorAll(".box-toggle[data-toggle-box]").forEach((toggle) => {
+      const boxId = toggle.getAttribute("data-toggle-box");
+      toggle.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (this._collapsedBoxes.has(boxId)) {
+          this._collapsedBoxes.delete(boxId);
+        } else {
+          this._collapsedBoxes.add(boxId);
+        }
+        this._render(this._data);
+      });
     });
   }
 }

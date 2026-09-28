@@ -160,7 +160,11 @@ zusätzliche Ressource unter *Einstellungen → Dashboards → Ressourcen*
 nötig. Spulen, die einer Filamentbox zugeordnet sind, werden darin unter
 einer gemeinsamen Kopfzeile (Boxname + Luftfeuchtigkeit) gruppiert
 dargestellt; nicht zugeordnete Spulen erscheinen wie bisher einzeln
-darunter. Pro Spule zweizeilig aufgebaut: Name/Material/Farbe, darunter der
+darunter. Über das Pfeil-Symbol in der Kopfzeile lässt sich eine Box
+ein-/ausklappen: eingeklappt werden die einzelnen Spulen ausgeblendet und
+stattdessen nur ein kleiner Farbpunkt je enthaltener Spule angezeigt
+(Klapp-Zustand gilt nur für die aktuelle Browser-Sitzung). Pro Spule
+zweizeilig aufgebaut: Name/Material/Farbe, darunter der
 Fortschrittsbalken mit Füllstand in % und Restgewicht in Gramm; bei Spulen
 ohne Box zusätzlich rechts (falls ein eigener Luftfeuchtigkeitssensor
 hinterlegt ist) das Feuchtigkeits-Symbol mit dem aktuellen Messwert in %
