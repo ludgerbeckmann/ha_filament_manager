@@ -97,11 +97,13 @@ usw.). Die Restmenge wird dort bewusst nicht verändert – dafür gibt es die
 ### Eingebaute Übersichtskarte (empfohlen)
 
 Die Integration liefert eine eigene Lovelace-Karte mit, die **automatisch
-alle Spulen** anzeigt (Farbe, Material, Füllstand als Fortschrittsbalken,
-Luftfeuchtigkeits-Status) und sich selbst beim Frontend registriert – keine
+alle Spulen** anzeigt und sich selbst beim Frontend registriert – keine
 zusätzliche Ressource unter *Einstellungen → Dashboards → Ressourcen*
-nötig. Einfach eine neue Karte hinzufügen und "Filament Manager" auswählen,
-oder per YAML:
+nötig. Pro Spule zweizeilig aufgebaut: Name/Material/Farbe, darunter der
+Fortschrittsbalken mit Füllstand in % und Restgewicht in Gramm; auf der
+rechten Seite (falls ein Luftfeuchtigkeitssensor hinterlegt ist) das
+Feuchtigkeits-Symbol mit dem aktuellen Messwert in % darunter. Einfach eine
+neue Karte hinzufügen und "Filament Manager" auswählen, oder per YAML:
 
 ```yaml
 type: custom:filament-manager-card
