@@ -70,7 +70,7 @@
         "box_full": "Diese Filamentbox ist bereits voll (max. 4 Spulen)."
       },
       "abort": {
-        "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+        "reconfigure_successful": "Neukonfiguration erfolgreich."
       }
     },
     "box": {
@@ -106,7 +106,7 @@
         "name_required": "Bitte gib einen Namen für die Box ein."
       },
       "abort": {
-        "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+        "reconfigure_successful": "Neukonfiguration erfolgreich."
       }
     }
   },

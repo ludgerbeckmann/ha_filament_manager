@@ -70,7 +70,7 @@
         "box_full": "This filament box is already full (max. 4 spools)."
       },
       "abort": {
-        "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+        "reconfigure_successful": "Reconfiguration successful."
       }
     },
     "box": {
@@ -106,7 +106,7 @@
         "name_required": "Please enter a name for the box."
       },
       "abort": {
-        "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+        "reconfigure_successful": "Reconfiguration successful."
       }
     }
   },
