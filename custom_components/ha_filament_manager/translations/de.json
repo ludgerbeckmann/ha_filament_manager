@@ -83,24 +83,24 @@
       "step": {
         "user": {
           "title": "Filamentbox hinzufügen",
-          "description": "Eine Filamentbox gruppiert bis zu 4 Spulen (z. B. eine Trockenbox) und kann einen gemeinsamen Luftfeuchtigkeitssensor für alle hinterlegten Spulen tragen.",
+          "description": "Eine Filamentbox gruppiert bis zu 4 Spulen (z. B. eine Trockenbox) und kann einen gemeinsamen Luftfeuchtigkeitssensor für alle hinterlegten Spulen tragen. Grenzwert und Verzögerung leer lassen, um die Werte des empfindlichsten in der Box gelagerten Materials zu verwenden.",
           "data": {
             "name": "Name",
             "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
-            "humidity_max": "Maximale Luftfeuchtigkeit",
-            "humidity_delay": "Warnung erst nach (Minuten über dem Grenzwert)",
+            "humidity_max": "Maximale Luftfeuchtigkeit (leer = automatisch)",
+            "humidity_delay": "Warnung erst nach (Minuten, leer = automatisch)",
             "notify_targets": "Benachrichtigen (optional)",
             "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
           }
         },
         "reconfigure": {
           "title": "Filamentbox bearbeiten",
-          "description": "Aktualisiere den Namen und die Luftfeuchtigkeitseinstellungen der Box.",
+          "description": "Aktualisiere den Namen und die Luftfeuchtigkeitseinstellungen der Box. Grenzwert und Verzögerung leer lassen, um die Werte des empfindlichsten in der Box gelagerten Materials zu verwenden.",
           "data": {
             "name": "Name",
             "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
-            "humidity_max": "Maximale Luftfeuchtigkeit",
-            "humidity_delay": "Warnung erst nach (Minuten über dem Grenzwert)",
+            "humidity_max": "Maximale Luftfeuchtigkeit (leer = automatisch)",
+            "humidity_delay": "Warnung erst nach (Minuten, leer = automatisch)",
             "notify_targets": "Benachrichtigen (optional)",
             "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
           }

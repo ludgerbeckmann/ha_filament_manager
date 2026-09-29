@@ -447,7 +447,11 @@ async def test_box_creates_humidity_alert(hass: HomeAssistant) -> None:
 
     entry = await _setup_hub(
         hass,
-        subentries_data=[_box_subentry(**{CONF_HUMIDITY_SENSOR: "sensor.box_humidity", CONF_HUMIDITY_MAX: 40})],
+        subentries_data=[
+            _box_subentry(
+                **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity", CONF_HUMIDITY_MAX: 40, CONF_HUMIDITY_DELAY: 0}
+            )
+        ],
     )
 
     alert_entity = "binary_sensor.dry_box_1_humidity_alert"
@@ -462,6 +466,69 @@ async def test_box_creates_humidity_alert(hass: HomeAssistant) -> None:
     assert hass.states.get("number.dry_box_1_remaining_weight") is None
     box = _subentry_by_title(entry, "Dry Box 1")
     assert box.subentry_type == SUBENTRY_TYPE_BOX
+
+
+async def test_box_limits_follow_most_sensitive_material(hass: HomeAssistant) -> None:
+    hass.states.async_set("sensor.box_humidity", "30")
+    entry = await _setup_hub(hass)
+    box = _add_box_subentry(hass, entry, **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity"})
+    await hass.async_block_till_done()
+    alert = "binary_sensor.dry_box_1_humidity_alert"
+
+    # Empty box: generic defaults (40 %, 30 min).
+    assert hass.states.get(alert).attributes["threshold"] == 40
+    assert hass.states.get(alert).attributes["delay_minutes"] == 30
+
+    # Nylon (20 %, 10 min) dominates PLA (50 %, 60 min) in the same box.
+    _add_spool_subentry(hass, entry, "PLA Spool", **{CONF_MATERIAL: "PLA", CONF_BOX: box.subentry_id})
+    _add_spool_subentry(hass, entry, "Nylon Spool", **{CONF_MATERIAL: "Nylon", CONF_BOX: box.subentry_id})
+    await hass.async_block_till_done()
+    assert hass.states.get(alert).attributes["threshold"] == 20
+    assert hass.states.get(alert).attributes["delay_minutes"] == 10
+
+
+async def test_box_flow_leaves_limits_automatic_and_can_reset_them(hass: HomeAssistant) -> None:
+    hub = await _setup_hub(hass)
+
+    result = await hass.config_entries.subentries.async_init(
+        (hub.entry_id, SUBENTRY_TYPE_BOX), context={"source": "user"}
+    )
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"name": "Box A"})
+    assert result["type"] == "create_entry"
+    assert CONF_HUMIDITY_MAX not in result["data"]
+    assert CONF_HUMIDITY_DELAY not in result["data"]
+    await hass.async_block_till_done()
+
+    box = _subentry_by_title(hub, "Box A")
+    hass.config_entries.async_update_subentry(
+        hub, box, data={CONF_HUMIDITY_MAX: 45, CONF_HUMIDITY_DELAY: 5}
+    )
+    await hass.async_block_till_done()
+
+    # Reconfigure: submitting without the two fields clears them again.
+    result = await hass.config_entries.subentries.async_init(
+        (hub.entry_id, SUBENTRY_TYPE_BOX), context={"source": "reconfigure", "subentry_id": box.subentry_id}
+    )
+    assert result["step_id"] == "reconfigure"
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"name": "Box A"})
+    assert result["type"] == "abort"
+    assert CONF_HUMIDITY_MAX not in _subentry_by_title(hub, "Box A").data
+
+
+async def test_box_explicit_limits_override_automatic(hass: HomeAssistant) -> None:
+    hass.states.async_set("sensor.box_humidity", "30")
+    entry = await _setup_hub(hass)
+    box = _add_box_subentry(
+        hass,
+        entry,
+        **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity", CONF_HUMIDITY_MAX: 45, CONF_HUMIDITY_DELAY: 5},
+    )
+    _add_spool_subentry(hass, entry, "Nylon Spool", **{CONF_MATERIAL: "Nylon", CONF_BOX: box.subentry_id})
+    await hass.async_block_till_done()
+
+    attributes = hass.states.get("binary_sensor.dry_box_1_humidity_alert").attributes
+    assert attributes["threshold"] == 45
+    assert attributes["delay_minutes"] == 5
 
 
 async def test_spool_in_box_uses_box_humidity_not_its_own(hass: HomeAssistant) -> None:

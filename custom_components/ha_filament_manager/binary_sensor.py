@@ -31,6 +31,7 @@ from .const import (
     SUBENTRY_TYPE_SPOOL,
     signal_spool_updated,
 )
+from .boxes import effective_box_humidity_limits
 from .entity import box_device_info, spool_device_info
 from .notify_helper import async_handle_alert_transition
 
@@ -45,8 +46,15 @@ async def async_setup_entry(
         if subentry.subentry_type == SUBENTRY_TYPE_BOX:
             humidity_sensor = subentry.data.get(CONF_HUMIDITY_SENSOR)
             if humidity_sensor:
+                threshold, delay = effective_box_humidity_limits(entry, subentry)
                 entities.append(
-                    FilamentHumidityAlert(subentry, humidity_sensor, device_info=box_device_info(subentry))
+                    FilamentHumidityAlert(
+                        subentry,
+                        humidity_sensor,
+                        device_info=box_device_info(subentry),
+                        threshold=threshold,
+                        delay_minutes=delay,
+                    )
                 )
         elif subentry.subentry_type == SUBENTRY_TYPE_SPOOL:
             humidity_sensor = subentry.data.get(CONF_HUMIDITY_SENSOR)
@@ -58,7 +66,14 @@ async def async_setup_entry(
             has_box = bool(subentry.data.get(CONF_BOX))
             if humidity_sensor and not has_box:
                 entities.append(
-                    FilamentHumidityAlert(subentry, humidity_sensor, device_info=spool_device_info(subentry))
+                    FilamentHumidityAlert(
+                        subentry,
+                        humidity_sensor,
+                        device_info=spool_device_info(subentry),
+                        threshold=subentry.data.get(CONF_HUMIDITY_MAX, DEFAULT_HUMIDITY_MAX),
+                        # Entries created before the delay existed have no value -> no delay.
+                        delay_minutes=subentry.data.get(CONF_HUMIDITY_DELAY) or 0,
+                    )
                 )
             elif has_box:
                 _async_remove_humidity_alert_entity(hass, subentry)
@@ -91,12 +106,19 @@ class FilamentHumidityAlert(BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.MOISTURE
     _attr_icon = "mdi:water-percent"
 
-    def __init__(self, subentry: ConfigSubentry, source_entity_id: str, *, device_info: DeviceInfo) -> None:
+    def __init__(
+        self,
+        subentry: ConfigSubentry,
+        source_entity_id: str,
+        *,
+        device_info: DeviceInfo,
+        threshold: float,
+        delay_minutes: float,
+    ) -> None:
         self._subentry = subentry
         self._source_entity_id = source_entity_id
-        self._threshold = subentry.data.get(CONF_HUMIDITY_MAX, DEFAULT_HUMIDITY_MAX)
-        # Entries created before the delay existed have no value -> no delay.
-        self._delay_minutes = float(subentry.data.get(CONF_HUMIDITY_DELAY) or 0)
+        self._threshold = threshold
+        self._delay_minutes = float(delay_minutes)
         self._current_humidity: float | None = None
         self._over_threshold = False
         self._cancel_delay: CALLBACK_TYPE | None = None
