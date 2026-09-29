@@ -262,11 +262,14 @@ class FilamentManagerCard extends HTMLElement {
   _renderBoxSection(box) {
     const isCollapsed = this._collapsedBoxes.has(box.deviceId);
 
-    const humidityValueLabel = box.humidityValue !== null ? `${box.humidityValue}%` : "–";
+    // Whole percent, in a fixed-width slot: sensors report anything from "50"
+    // to "37.47", which would otherwise shift the color dots left and right
+    // from box to box. The exact value is in the sensor's detail dialog.
+    const humidityValueLabel = box.humidityValue !== null ? `${Math.round(box.humidityValue)}%` : "–";
     const humidityBadge = box.hasHumiditySensor
       ? `<span class="box-humidity ${box.humidityAlert ? "alert" : ""}" data-entity="${box.humidityEntityId || ""}">
            <ha-icon icon="${box.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"></ha-icon>
-           ${humidityValueLabel}
+           <span class="box-humidity-value">${humidityValueLabel}</span>
          </span>`
       : "";
 
@@ -369,6 +372,7 @@ class FilamentManagerCard extends HTMLElement {
         }
         .box-humidity { display: flex; align-items: center; gap: 4px; font-size: 0.85em; flex: none; }
         .box-humidity ha-icon { --mdc-icon-size: 16px; }
+        .box-humidity-value { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
         .box-humidity.alert { color: var(--error-color, #db4437); }
         .swatch {
           width: 16px;

@@ -1,16 +1,20 @@
 from types import MappingProxyType
 
+from datetime import timedelta
+
 from homeassistant.config_entries import ConfigSubentry, ConfigSubentryData
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.setup import async_setup_component
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.ha_filament_manager.const import (
     CARD_URL_PATH,
     CONF_BOX,
     CONF_COLOR,
     CONF_DIAMETER,
+    CONF_HUMIDITY_DELAY,
     CONF_HUMIDITY_MAX,
     CONF_HUMIDITY_SENSOR,
     CONF_INITIAL_REMAINING_WEIGHT,
@@ -217,7 +221,12 @@ async def test_config_flow_suggests_humidity_max_from_material(hass: HomeAssista
     hub = await _setup_hub(hass)
 
     # Hygroscopic materials get a much stricter threshold than PLA.
-    for material, expected in (("Nylon", 20), ("TPU", 30), ("PETG", 40), ("PLA", 50)):
+    for material, expected, expected_delay in (
+        ("Nylon", 20, 10),
+        ("TPU", 30, 20),
+        ("PETG", 40, 30),
+        ("PLA", 50, 60),
+    ):
         result = await _start_spool_flow(hass, hub)
         result = await hass.config_entries.subentries.async_configure(
             result["flow_id"],
@@ -225,6 +234,7 @@ async def test_config_flow_suggests_humidity_max_from_material(hass: HomeAssista
         )
         assert result["step_id"] == "details"
         assert _schema_default(result["data_schema"], CONF_HUMIDITY_MAX) == expected
+        assert _schema_default(result["data_schema"], CONF_HUMIDITY_DELAY) == expected_delay
 
     # Unknown materials fall back to the generic default.
     result = await _start_spool_flow(hass, hub)
@@ -283,6 +293,62 @@ async def test_humidity_alert_tracks_source_sensor(hass: HomeAssistant) -> None:
     state = hass.states.get(alert_entity)
     assert state.state == "on"
     assert state.attributes["current_humidity"] == 55.0
+
+
+async def test_humidity_alert_delay_ignores_short_spikes(hass: HomeAssistant) -> None:
+    hass.states.async_set("sensor.dry_box_humidity", "30")
+    await hass.async_block_till_done()
+
+    await _setup_entry(
+        hass,
+        **{CONF_HUMIDITY_SENSOR: "sensor.dry_box_humidity", CONF_HUMIDITY_MAX: 40, CONF_HUMIDITY_DELAY: 30},
+    )
+    alert_entity = "binary_sensor.test_spool_humidity_alert"
+    assert hass.states.get(alert_entity).state == "off"
+
+    # Too humid, but not for long enough yet.
+    hass.states.async_set("sensor.dry_box_humidity", "55")
+    await hass.async_block_till_done()
+    assert hass.states.get(alert_entity).state == "off"
+    assert hass.states.get(alert_entity).attributes["over_threshold"] is True
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=29))
+    await hass.async_block_till_done()
+    assert hass.states.get(alert_entity).state == "off"
+
+    # A dip below the threshold restarts the grace period.
+    hass.states.async_set("sensor.dry_box_humidity", "30")
+    await hass.async_block_till_done()
+    hass.states.async_set("sensor.dry_box_humidity", "55")
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=29))
+    await hass.async_block_till_done()
+    assert hass.states.get(alert_entity).state == "off"
+
+
+async def test_humidity_alert_delay_fires_when_sustained(hass: HomeAssistant) -> None:
+    hass.states.async_set("sensor.dry_box_humidity", "30")
+    await hass.async_block_till_done()
+
+    await _setup_entry(
+        hass,
+        **{CONF_HUMIDITY_SENSOR: "sensor.dry_box_humidity", CONF_HUMIDITY_MAX: 40, CONF_HUMIDITY_DELAY: 30},
+    )
+    alert_entity = "binary_sensor.test_spool_humidity_alert"
+
+    hass.states.async_set("sensor.dry_box_humidity", "55")
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=31))
+    await hass.async_block_till_done()
+    assert hass.states.get(alert_entity).state == "on"
+
+    # Staying humid keeps it on; dropping below clears it immediately.
+    hass.states.async_set("sensor.dry_box_humidity", "60")
+    await hass.async_block_till_done()
+    assert hass.states.get(alert_entity).state == "on"
+    hass.states.async_set("sensor.dry_box_humidity", "30")
+    await hass.async_block_till_done()
+    assert hass.states.get(alert_entity).state == "off"
 
 
 async def test_low_stock_alert_not_created_without_threshold(hass: HomeAssistant) -> None:

@@ -33,6 +33,7 @@
             "box_subentry_id": "Filamentbox (optional)",
             "humidity_sensor": "Luftfeuchtigkeitssensor (optional, wird ignoriert, wenn oben eine Filamentbox ausgewählt ist)",
             "humidity_max": "Maximale Luftfeuchtigkeit",
+            "humidity_delay": "Warnung erst nach (Minuten über dem Grenzwert)",
             "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
             "notify_targets": "Benachrichtigen (optional)",
             "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
@@ -58,6 +59,7 @@
             "box_subentry_id": "Filamentbox (optional)",
             "humidity_sensor": "Luftfeuchtigkeitssensor (optional, wird ignoriert, wenn oben eine Filamentbox ausgewählt ist)",
             "humidity_max": "Maximale Luftfeuchtigkeit",
+            "humidity_delay": "Warnung erst nach (Minuten über dem Grenzwert)",
             "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
             "notify_targets": "Benachrichtigen (optional)",
             "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
@@ -86,6 +88,7 @@
             "name": "Name",
             "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
             "humidity_max": "Maximale Luftfeuchtigkeit",
+            "humidity_delay": "Warnung erst nach (Minuten über dem Grenzwert)",
             "notify_targets": "Benachrichtigen (optional)",
             "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
           }
@@ -97,6 +100,7 @@
             "name": "Name",
             "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
             "humidity_max": "Maximale Luftfeuchtigkeit",
+            "humidity_delay": "Warnung erst nach (Minuten über dem Grenzwert)",
             "notify_targets": "Benachrichtigen (optional)",
             "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
           }

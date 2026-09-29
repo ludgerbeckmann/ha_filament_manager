@@ -156,6 +156,24 @@ liegt):
 | Nylon, PVA | 20 % |
 | Sonstiges | 40 % |
 
+Zusätzlich gibt es eine **Verzögerung** (Feld „Warnung erst nach … Minuten"):
+Die Warnung schaltet erst, wenn die Luftfeuchtigkeit so lange am Stück über
+dem Grenzwert lag. Kurze Ausreißer (Box öffnen, Spulenwechsel) lösen so
+keinen Alarm aus – Filament nimmt Feuchtigkeit erst über Stunden auf. Fällt
+der Wert zwischendurch unter den Grenzwert, beginnt die Wartezeit von vorn;
+die Warnung endet weiterhin sofort. Auch sie ist je nach Material vorbelegt:
+
+| Material | Vorbelegte Verzögerung |
+|---|---|
+| PLA, ABS, ASA, HIPS | 60 min |
+| PETG | 30 min |
+| TPU, PC | 20 min |
+| Nylon, PVA | 10 min |
+| Sonstiges und Boxen | 30 min |
+
+`0` warnt sofort. Bereits vorhandene Spulen und Boxen ohne gespeicherten
+Wert warnen wie bisher sofort, bis du die Verzögerung einträgst.
+
 Das sind Faustwerte, keine Normen – der Wert bleibt frei änderbar, und die
 Angaben deines Filamentherstellers haben Vorrang. Bei einer **Filamentbox**
 gibt es keinen Materialbezug: dort ist der Grenzwert vorbelegt mit 40 % und

@@ -34,6 +34,7 @@ from .const import (
     CONF_BOX,
     CONF_COLOR,
     CONF_DIAMETER,
+    CONF_HUMIDITY_DELAY,
     CONF_HUMIDITY_MAX,
     CONF_HUMIDITY_SENSOR,
     CONF_INITIAL_REMAINING_WEIGHT,
@@ -53,6 +54,7 @@ from .const import (
     MAX_SPOOLS_PER_BOX,
     SUBENTRY_TYPE_BOX,
     SUBENTRY_TYPE_SPOOL,
+    suggested_humidity_delay,
     suggested_humidity_max,
     suggested_total_weight,
 )
@@ -146,6 +148,16 @@ def _humidity_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
     ] = selector.NumberSelector(
         selector.NumberSelectorConfig(
             min=0, max=100, step=1, unit_of_measurement="%", mode=selector.NumberSelectorMode.BOX
+        )
+    )
+    fields[
+        vol.Optional(
+            CONF_HUMIDITY_DELAY,
+            default=defaults.get(CONF_HUMIDITY_DELAY, suggested_humidity_delay(defaults.get(CONF_MATERIAL))),
+        )
+    ] = selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=0, max=1440, step=1, unit_of_measurement="min", mode=selector.NumberSelectorMode.BOX
         )
     )
 
