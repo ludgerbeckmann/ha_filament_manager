@@ -493,9 +493,10 @@ window.customCards.push({
 
 /**
  * Minimal visual editor: just the (optional) card title, so Lovelace's
- * "Visual editor not supported" fallback notice no longer shows up. Uses
- * <ha-textfield>, which the frontend has already registered globally by the
- * time a card editor can open - no import needed.
+ * "Visual editor not supported" fallback notice no longer shows up. Uses a
+ * plain native <input> styled to match Home Assistant: <ha-textfield> is only
+ * registered once some other part of the frontend has loaded it, so relying
+ * on it can leave the editor rendering an empty, unusable form.
  *
  * The shadow DOM is built exactly once and the field's value is only synced
  * afterwards (skipped while it has focus). Rebuilding the whole form's
@@ -531,19 +532,44 @@ class FilamentManagerCardEditor extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         .form { padding: 16px 0; }
-        ha-textfield { display: block; }
+        label {
+          display: block;
+          font-size: 12px;
+          margin: 0 0 4px 4px;
+          color: var(--secondary-text-color);
+        }
+        input {
+          box-sizing: border-box;
+          width: 100%;
+          height: 56px;
+          padding: 0 16px;
+          font: inherit;
+          font-size: 16px;
+          color: var(--primary-text-color);
+          background: var(--input-fill-color, var(--secondary-background-color, rgba(0, 0, 0, 0.06)));
+          border: none;
+          border-bottom: 1px solid var(--input-idle-line-color, var(--secondary-text-color));
+          border-radius: 4px 4px 0 0;
+          outline: none;
+        }
+        input:hover { border-bottom-color: var(--primary-text-color); }
+        input:focus {
+          border-bottom: 2px solid var(--primary-color);
+          padding-bottom: 1px;
+        }
       </style>
       <div class="form">
-        <ha-textfield label="Titel (leer lassen für „Filament Manager“)"></ha-textfield>
+        <label for="title">Titel (leer lassen für „Filament Manager“)</label>
+        <input id="title" type="text" autocomplete="off" />
       </div>
     `;
 
-    const field = this.shadowRoot.querySelector("ha-textfield");
+    const field = this.shadowRoot.querySelector("input");
     field.addEventListener("input", (event) => this._titleChanged(event));
   }
 
   _syncField() {
-    const field = this.shadowRoot.querySelector("ha-textfield");
+    const field = this.shadowRoot.querySelector("input");
     if (!field || this.shadowRoot.activeElement === field) return;
     const desired = this._config.title || "";
     if (field.value !== desired) {
