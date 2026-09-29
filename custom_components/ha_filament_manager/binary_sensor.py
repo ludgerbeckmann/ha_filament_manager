@@ -7,17 +7,20 @@ notify_helper.py.
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .const import (
     CONF_BOX,
+    CONF_HUMIDITY_DELAY,
     CONF_HUMIDITY_MAX,
     CONF_HUMIDITY_SENSOR,
     CONF_LOW_STOCK_THRESHOLD,
@@ -76,7 +79,12 @@ def _async_remove_humidity_alert_entity(hass: HomeAssistant, subentry: ConfigSub
 
 
 class FilamentHumidityAlert(BinarySensorEntity):
-    """Warns when the monitored humidity for an opened spool/box is too high."""
+    """Warns when the monitored humidity for an opened spool/box is too high.
+
+    With a configured delay (minutes), the alert only turns on once the
+    humidity has stayed above the threshold for that long without dropping
+    back below it - short spikes (opening the box) are ignored.
+    """
 
     _attr_has_entity_name = True
     _attr_translation_key = "humidity_alert"
@@ -87,7 +95,11 @@ class FilamentHumidityAlert(BinarySensorEntity):
         self._subentry = subentry
         self._source_entity_id = source_entity_id
         self._threshold = subentry.data.get(CONF_HUMIDITY_MAX, DEFAULT_HUMIDITY_MAX)
+        # Entries created before the delay existed have no value -> no delay.
+        self._delay_minutes = float(subentry.data.get(CONF_HUMIDITY_DELAY) or 0)
         self._current_humidity: float | None = None
+        self._over_threshold = False
+        self._cancel_delay: CALLBACK_TYPE | None = None
         self._attr_unique_id = f"{subentry.subentry_id}_humidity_alert"
         self._attr_device_info = device_info
         self._attr_available = False
@@ -98,8 +110,15 @@ class FilamentHumidityAlert(BinarySensorEntity):
         self.async_on_remove(
             async_track_state_change_event(self.hass, [self._source_entity_id], self._handle_source_event)
         )
+        self.async_on_remove(self._cancel_pending_delay)
         if (state := self.hass.states.get(self._source_entity_id)) is not None:
             self._update_from_state(state.state)
+
+    @callback
+    def _cancel_pending_delay(self) -> None:
+        if self._cancel_delay is not None:
+            self._cancel_delay()
+            self._cancel_delay = None
 
     @callback
     def _handle_source_event(self, event: Event) -> None:
@@ -107,6 +126,19 @@ class FilamentHumidityAlert(BinarySensorEntity):
         new_state = event.data["new_state"]
         self._update_from_state(new_state.state if new_state else None)
         self.async_write_ha_state()
+        self._notify_transition(was_on)
+
+    @callback
+    def _delay_elapsed(self, _now: datetime) -> None:
+        """Humidity stayed above the threshold for the whole grace period."""
+        self._cancel_delay = None
+        if not self._over_threshold or self._attr_is_on:
+            return
+        self._attr_is_on = True
+        self.async_write_ha_state()
+        self._notify_transition(False)
+
+    def _notify_transition(self, was_on: bool) -> None:
         async_handle_alert_transition(
             self.hass,
             self._subentry,
@@ -126,18 +158,34 @@ class FilamentHumidityAlert(BinarySensorEntity):
             self._current_humidity = float(raw_state)  # type: ignore[arg-type]
         except (TypeError, ValueError):
             self._current_humidity = None
+            self._over_threshold = False
+            self._cancel_pending_delay()
             self._attr_available = False
             self._attr_is_on = False
             return
+
         self._attr_available = True
-        self._attr_is_on = self._current_humidity > self._threshold
+        self._over_threshold = self._current_humidity > self._threshold
+
+        if not self._over_threshold:
+            self._cancel_pending_delay()
+            self._attr_is_on = False
+        elif self._delay_minutes <= 0:
+            self._attr_is_on = True
+        elif not self._attr_is_on and self._cancel_delay is None:
+            # Start the grace period; already-on stays on while still too humid.
+            self._cancel_delay = async_call_later(
+                self.hass, self._delay_minutes * 60, self._delay_elapsed
+            )
 
     @property
-    def extra_state_attributes(self) -> dict[str, float | str | None]:
+    def extra_state_attributes(self) -> dict[str, float | str | bool | None]:
         """Return diagnostic attributes for the humidity alert."""
         return {
             "current_humidity": self._current_humidity,
             "threshold": self._threshold,
+            "delay_minutes": self._delay_minutes,
+            "over_threshold": self._over_threshold,
             "source_entity_id": self._source_entity_id,
         }
 

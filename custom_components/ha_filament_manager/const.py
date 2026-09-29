@@ -14,6 +14,7 @@ CONF_TOTAL_WEIGHT: Final = "total_weight"
 CONF_INITIAL_REMAINING_WEIGHT: Final = "initial_remaining_weight"
 CONF_HUMIDITY_SENSOR: Final = "humidity_sensor"
 CONF_HUMIDITY_MAX: Final = "humidity_max"
+CONF_HUMIDITY_DELAY: Final = "humidity_delay"
 CONF_LOW_STOCK_THRESHOLD: Final = "low_stock_threshold"
 CONF_NOTIFY_TARGETS: Final = "notify_targets"
 CONF_PERSISTENT_NOTIFICATION: Final = "persistent_notification"
@@ -32,6 +33,8 @@ MAX_SPOOLS_PER_BOX: Final = 4
 
 DEFAULT_TOTAL_WEIGHT: Final = 1000
 DEFAULT_HUMIDITY_MAX: Final = 40
+DEFAULT_HUMIDITY_DELAY: Final = 30
+DEFAULT_MATERIAL: Final = "PETG"
 DEFAULT_DIAMETER: Final = "1.75"
 
 MATERIAL_OPTIONS: Final[list[str]] = [
@@ -129,6 +132,51 @@ def suggested_total_weight(manufacturer: str | None, material: str | None) -> in
     return DEFAULT_TOTAL_WEIGHT
 
 
+# Suggested maximum relative humidity (%) per material, i.e. the value above
+# which storing that filament becomes a problem. Rules of thumb from common
+# manufacturer guidance: hygroscopic materials (Nylon, PVA) need to be kept
+# far drier than PLA/ABS. Only a suggestion - always freely adjustable, and
+# a specific manufacturer's datasheet takes precedence.
+MATERIAL_HUMIDITY_MAX: Final[dict[str, int]] = {
+    "PLA": 50,
+    "ABS": 50,
+    "ASA": 50,
+    "HIPS": 50,
+    "PETG": 40,
+    "TPU": 30,
+    "PC": 30,
+    "Nylon": 20,
+    "PVA": 20,
+}
+
+
+def suggested_humidity_max(material: str | None) -> int:
+    """Suggest a maximum humidity threshold (%) for a filament material."""
+    return MATERIAL_HUMIDITY_MAX.get((material or "").strip(), DEFAULT_HUMIDITY_MAX)
+
+
+# Suggested grace period (minutes) the humidity has to stay above the limit
+# before the alert fires, per material. Filament absorbs moisture over hours
+# to days, so a short spike (opening the box, swapping a spool) is harmless;
+# the more hygroscopic the material, the sooner it should be flagged.
+MATERIAL_HUMIDITY_DELAY: Final[dict[str, int]] = {
+    "PLA": 60,
+    "ABS": 60,
+    "ASA": 60,
+    "HIPS": 60,
+    "PETG": 30,
+    "TPU": 20,
+    "PC": 20,
+    "Nylon": 10,
+    "PVA": 10,
+}
+
+
+def suggested_humidity_delay(material: str | None) -> int:
+    """Suggest how many minutes humidity must stay too high before alerting."""
+    return MATERIAL_HUMIDITY_DELAY.get((material or "").strip(), DEFAULT_HUMIDITY_DELAY)
+
+
 SERVICE_CONSUME_FILAMENT: Final = "consume_filament"
 SERVICE_REFILL_SPOOL: Final = "refill_spool"
 
@@ -138,7 +186,7 @@ CARD_FILENAME: Final = "filament-manager-card.js"
 CARD_URL_PATH: Final = f"/{DOMAIN}_files/{CARD_FILENAME}"
 # Bump whenever the card's JS changes, to bust browser caching of the
 # static file (independent of the integration's own manifest version).
-CARD_VERSION: Final = "12"
+CARD_VERSION: Final = "14"
 
 
 def signal_spool_updated(subentry_id: str) -> str:
