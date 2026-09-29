@@ -264,7 +264,7 @@ class FilamentManagerCard extends HTMLElement {
 
     const humidityValueLabel = box.humidityValue !== null ? `${box.humidityValue}%` : "–";
     const humidityBadge = box.hasHumiditySensor
-      ? `<span class="box-humidity ${box.humidityAlert ? "alert" : ""}">
+      ? `<span class="box-humidity ${box.humidityAlert ? "alert" : ""}" data-entity="${box.humidityEntityId || ""}">
            <ha-icon icon="${box.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"></ha-icon>
            ${humidityValueLabel}
          </span>`
@@ -289,12 +289,14 @@ class FilamentManagerCard extends HTMLElement {
       : "";
 
     return `
-      <div class="box-header" data-entity="${box.humidityEntityId || ""}">
+      <div
+        class="box-header"
+        data-toggle-box="${box.deviceId}"
+        title="${isCollapsed ? "Spulen anzeigen" : "Spulen ausblenden"}"
+      >
         <ha-icon
           class="box-toggle"
-          data-toggle-box="${box.deviceId}"
           icon="${isCollapsed ? "mdi:chevron-right" : "mdi:chevron-down"}"
-          title="${isCollapsed ? "Spulen anzeigen" : "Spulen ausblenden"}"
         ></ha-icon>
         <ha-icon class="box-icon" icon="mdi:archive-outline"></ha-icon>
         <span class="box-name">${box.name}</span>
@@ -449,25 +451,27 @@ class FilamentManagerCard extends HTMLElement {
       row.addEventListener("click", () => this._openMoreInfo(entityId));
     });
 
-    // A box header opens its shared humidity sensor's detail view.
-    this.shadowRoot.querySelectorAll(".box-header[data-entity]").forEach((header) => {
-      const entityId = header.getAttribute("data-entity");
-      if (!entityId) return;
-      header.addEventListener("click", () => this._openMoreInfo(entityId));
-    });
-
-    // The collapse toggle must stop its click from also bubbling to the
-    // header (which would otherwise open the humidity sensor's more-info).
-    this.shadowRoot.querySelectorAll(".box-toggle[data-toggle-box]").forEach((toggle) => {
-      const boxId = toggle.getAttribute("data-toggle-box");
-      toggle.addEventListener("click", (event) => {
-        event.stopPropagation();
+    // Clicking a box header (name, icon, dots) collapses/expands its spools.
+    this.shadowRoot.querySelectorAll(".box-header[data-toggle-box]").forEach((header) => {
+      const boxId = header.getAttribute("data-toggle-box");
+      header.addEventListener("click", () => {
         if (this._collapsedBoxes.has(boxId)) {
           this._collapsedBoxes.delete(boxId);
         } else {
           this._collapsedBoxes.add(boxId);
         }
         this._render(this._data);
+      });
+    });
+
+    // The box's humidity badge opens the shared humidity sensor's detail
+    // view instead, and must stop the click from also toggling the header.
+    this.shadowRoot.querySelectorAll(".box-humidity[data-entity]").forEach((badge) => {
+      const entityId = badge.getAttribute("data-entity");
+      if (!entityId) return;
+      badge.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this._openMoreInfo(entityId);
       });
     });
   }

@@ -166,7 +166,7 @@ zusätzliche Ressource unter *Einstellungen → Dashboards → Ressourcen*
 nötig. Spulen, die einer Filamentbox zugeordnet sind, werden darin unter
 einer gemeinsamen Kopfzeile (Boxname + Luftfeuchtigkeit) gruppiert
 dargestellt; nicht zugeordnete Spulen erscheinen wie bisher einzeln
-darunter. Über das Pfeil-Symbol in der Kopfzeile lässt sich eine Box
+darunter. Per Klick auf die Kopfzeile (Boxname) lässt sich eine Box
 ein-/ausklappen: eingeklappt werden die einzelnen Spulen ausgeblendet und
 stattdessen nur ein kleiner Farbpunkt je enthaltener Spule angezeigt
 (Klapp-Zustand gilt nur für die aktuelle Browser-Sitzung). Pro Spule
@@ -186,7 +186,7 @@ Der Titel lässt sich auch über den visuellen Karten-Editor setzen (Stift-Symbo
 auf der Karte), ohne YAML zu bearbeiten.
 
 Ein Klick auf eine Zeile öffnet die Detailansicht der **Restmenge** (dort
-direkt editierbar); ein Klick auf das Luftfeuchtigkeits-Symbol (bzw. auf die
+direkt editierbar); ein Klick auf das Luftfeuchtigkeits-Symbol (auch in der
 Kopfzeile einer Box) öffnet stattdessen die Detailansicht des verknüpften
 **Luftfeuchtigkeitssensors**. Nach einem Update der Integration ggf. einmal
 den Browser-Cache leeren (Strg/Cmd+Shift+R), falls die Karte optisch nicht
