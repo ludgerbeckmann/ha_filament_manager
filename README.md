@@ -169,15 +169,26 @@ die Warnung endet weiterhin sofort. Auch sie ist je nach Material vorbelegt:
 | PETG | 30 min |
 | TPU, PC | 20 min |
 | Nylon, PVA | 10 min |
-| Sonstiges und Boxen | 30 min |
+| Sonstiges | 30 min |
 
-`0` warnt sofort. Bereits vorhandene Spulen und Boxen ohne gespeicherten
-Wert warnen wie bisher sofort, bis du die Verzögerung einträgst.
+`0` warnt sofort. Bereits vorhandene Spulen ohne gespeicherten Wert warnen wie bisher sofort,
+bis du die Verzögerung einträgst (Zahnrad der Spule → Speichern übernimmt den
+vorbelegten Wert). Bereits vorhandene Boxen ohne Verzögerung nutzen die
+Automatik.
 
 Das sind Faustwerte, keine Normen – der Wert bleibt frei änderbar, und die
-Angaben deines Filamentherstellers haben Vorrang. Bei einer **Filamentbox**
-gibt es keinen Materialbezug: dort ist der Grenzwert vorbelegt mit 40 % und
-sollte passend zum empfindlichsten darin gelagerten Material gewählt werden.
+Angaben deines Filamentherstellers haben Vorrang.
+
+### Filamentboxen: automatische Werte
+
+Eine **Filamentbox** hat kein eigenes Material. Lässt du bei ihr Grenzwert
+und/oder Verzögerung **leer**, gelten automatisch die strengsten Werte der
+darin gelagerten Spulen: der niedrigste Grenzwert und die kürzeste
+Verzögerung. Bei Nylon (20 %, 10 min) und PLA (50 %, 60 min) in derselben
+Box gilt also 20 % / 10 min. Wird eine Spule in die Box gelegt, herausgenommen
+oder ihr Material geändert, passen sich die Werte automatisch an. Eine leere
+Box nutzt 40 % / 30 min. Trägst du einen Wert ein, hat er immer Vorrang;
+durch Leeren des Feldes ("Neu konfigurieren") kehrst du zur Automatik zurück.
 
 ## Benachrichtigungen
 

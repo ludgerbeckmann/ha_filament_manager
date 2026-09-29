@@ -131,7 +131,14 @@ def _box_selector_field(entry: ConfigEntry, defaults: dict[str, Any]) -> dict[An
     }
 
 
-def _humidity_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
+def _humidity_fields(defaults: dict[str, Any], *, automatic: bool = False) -> dict[Any, Any]:
+    """Humidity sensor, limit and alert delay.
+
+    With `automatic` (filament boxes), limit and delay are optional without a
+    default: left empty, they follow the most sensitive material in the box.
+    A suggested value (not a default) is used so an existing value can be
+    cleared again to switch back to automatic.
+    """
     fields: dict[Any, Any] = {}
 
     humidity_sensor_kwargs = (
@@ -140,22 +147,22 @@ def _humidity_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
     fields[vol.Optional(CONF_HUMIDITY_SENSOR, **humidity_sensor_kwargs)] = selector.EntitySelector(
         selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
     )
-    fields[
-        vol.Optional(
-            CONF_HUMIDITY_MAX,
-            default=defaults.get(CONF_HUMIDITY_MAX, suggested_humidity_max(defaults.get(CONF_MATERIAL))),
-        )
-    ] = selector.NumberSelector(
+
+    def _key(conf: str, material_default: int):
+        if automatic:
+            suggested = defaults.get(conf)
+            return vol.Optional(
+                conf, description={"suggested_value": suggested} if suggested is not None else None
+            )
+        return vol.Optional(conf, default=defaults.get(conf, material_default))
+
+    material = defaults.get(CONF_MATERIAL)
+    fields[_key(CONF_HUMIDITY_MAX, suggested_humidity_max(material))] = selector.NumberSelector(
         selector.NumberSelectorConfig(
             min=0, max=100, step=1, unit_of_measurement="%", mode=selector.NumberSelectorMode.BOX
         )
     )
-    fields[
-        vol.Optional(
-            CONF_HUMIDITY_DELAY,
-            default=defaults.get(CONF_HUMIDITY_DELAY, suggested_humidity_delay(defaults.get(CONF_MATERIAL))),
-        )
-    ] = selector.NumberSelector(
+    fields[_key(CONF_HUMIDITY_DELAY, suggested_humidity_delay(material))] = selector.NumberSelector(
         selector.NumberSelectorConfig(
             min=0, max=1440, step=1, unit_of_measurement="min", mode=selector.NumberSelectorMode.BOX
         )
@@ -227,7 +234,7 @@ def _box_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
     fields: dict[Any, Any] = {
         vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")): selector.TextSelector(),
     }
-    fields.update(_humidity_fields(defaults))
+    fields.update(_humidity_fields(defaults, automatic=True))
     fields.update(_notify_fields(defaults))
     return fields
 
