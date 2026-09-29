@@ -45,7 +45,7 @@ from .const import (
     CONF_PERSISTENT_NOTIFICATION,
     CONF_TOTAL_WEIGHT,
     DEFAULT_DIAMETER,
-    DEFAULT_HUMIDITY_MAX,
+    DEFAULT_MATERIAL,
     DIAMETER_OPTIONS,
     DOMAIN,
     MANUFACTURER_OPTIONS,
@@ -53,6 +53,7 @@ from .const import (
     MAX_SPOOLS_PER_BOX,
     SUBENTRY_TYPE_BOX,
     SUBENTRY_TYPE_SPOOL,
+    suggested_humidity_max,
     suggested_total_weight,
 )
 
@@ -96,7 +97,7 @@ def _identity_fields(defaults: dict[str, Any], *, include_name: bool) -> dict[An
         fields[vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, ""))] = selector.TextSelector()
 
     fields[
-        vol.Required(CONF_MATERIAL, default=defaults.get(CONF_MATERIAL, MATERIAL_OPTIONS[0]))
+        vol.Required(CONF_MATERIAL, default=defaults.get(CONF_MATERIAL, DEFAULT_MATERIAL))
     ] = _select(MATERIAL_OPTIONS)
     fields[
         vol.Required(CONF_COLOR, default=defaults.get(CONF_COLOR, COLOR_OPTIONS[0]))
@@ -138,7 +139,10 @@ def _humidity_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
         selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
     )
     fields[
-        vol.Optional(CONF_HUMIDITY_MAX, default=defaults.get(CONF_HUMIDITY_MAX, DEFAULT_HUMIDITY_MAX))
+        vol.Optional(
+            CONF_HUMIDITY_MAX,
+            default=defaults.get(CONF_HUMIDITY_MAX, suggested_humidity_max(defaults.get(CONF_MATERIAL))),
+        )
     ] = selector.NumberSelector(
         selector.NumberSelectorConfig(
             min=0, max=100, step=1, unit_of_measurement="%", mode=selector.NumberSelectorMode.BOX

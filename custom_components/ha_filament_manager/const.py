@@ -32,6 +32,7 @@ MAX_SPOOLS_PER_BOX: Final = 4
 
 DEFAULT_TOTAL_WEIGHT: Final = 1000
 DEFAULT_HUMIDITY_MAX: Final = 40
+DEFAULT_MATERIAL: Final = "PETG"
 DEFAULT_DIAMETER: Final = "1.75"
 
 MATERIAL_OPTIONS: Final[list[str]] = [
@@ -127,6 +128,29 @@ def suggested_total_weight(manufacturer: str | None, material: str | None) -> in
     if material in MATERIAL_DEFAULT_WEIGHTS:
         return MATERIAL_DEFAULT_WEIGHTS[material]
     return DEFAULT_TOTAL_WEIGHT
+
+
+# Suggested maximum relative humidity (%) per material, i.e. the value above
+# which storing that filament becomes a problem. Rules of thumb from common
+# manufacturer guidance: hygroscopic materials (Nylon, PVA) need to be kept
+# far drier than PLA/ABS. Only a suggestion - always freely adjustable, and
+# a specific manufacturer's datasheet takes precedence.
+MATERIAL_HUMIDITY_MAX: Final[dict[str, int]] = {
+    "PLA": 50,
+    "ABS": 50,
+    "ASA": 50,
+    "HIPS": 50,
+    "PETG": 40,
+    "TPU": 30,
+    "PC": 30,
+    "Nylon": 20,
+    "PVA": 20,
+}
+
+
+def suggested_humidity_max(material: str | None) -> int:
+    """Suggest a maximum humidity threshold (%) for a filament material."""
+    return MATERIAL_HUMIDITY_MAX.get((material or "").strip(), DEFAULT_HUMIDITY_MAX)
 
 
 SERVICE_CONSUME_FILAMENT: Final = "consume_filament"

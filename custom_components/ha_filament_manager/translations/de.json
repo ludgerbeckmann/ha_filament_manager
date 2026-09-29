@@ -25,7 +25,7 @@
         },
         "details": {
           "title": "Details zur Spule",
-          "description": "Das Gesamtgewicht wird - falls für Material/Hersteller bekannt - vorgeschlagen, sonst ein generischer Standardwert. Immer frei anpassbar.",
+          "description": "Das Gesamtgewicht wird - falls für Material/Hersteller bekannt - vorgeschlagen, sonst ein generischer Standardwert. Immer frei anpassbar. Die maximale Luftfeuchtigkeit ist passend zum Material vorbelegt (z. B. 20 % für Nylon, 50 % für PLA).",
           "data": {
             "diameter": "Durchmesser",
             "total_weight": "Gesamtgewicht (neue Spule)",

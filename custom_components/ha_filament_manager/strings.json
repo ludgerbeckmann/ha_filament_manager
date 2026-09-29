@@ -25,7 +25,7 @@
         },
         "details": {
           "title": "Spool details",
-          "description": "Total weight is suggested from the material/manufacturer you picked where known, otherwise a generic default - always editable.",
+          "description": "Total weight is suggested from the material/manufacturer you picked where known, otherwise a generic default - always editable. The maximum humidity is pre-filled to suit the material (e.g. 20% for Nylon, 50% for PLA).",
           "data": {
             "diameter": "Diameter",
             "total_weight": "Total weight (new spool)",

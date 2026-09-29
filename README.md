@@ -65,7 +65,7 @@ werden über dessen "+ Hinzufügen"-Schaltfläche als Unterobjekte angelegt.
 
 Im Filament-Manager-Eintrag "+ Hinzufügen" → **Filamentspule** wählen:
 
-1. Material und Farbe (beides Dropdowns mit gängigen Werten, aber frei
+1. Material (vorbelegt: PETG) und Farbe (beides Dropdowns mit gängigen Werten, aber frei
    überschreibbar) sowie optional Hersteller (ebenfalls Dropdown mit
    bekannten Marken) auswählen.
 2. Durchmesser, Gesamtgewicht und (falls schon angebrochen) aktuelle
@@ -78,7 +78,8 @@ Im Filament-Manager-Eintrag "+ Hinzufügen" → **Filamentspule** wählen:
    die Box die Luftfeuchtigkeitsüberwachung für diese Spule – ein eigener
    Luftfeuchtigkeitssensor der Spule wird dann ignoriert.
 4. Optional (falls keine Box zugeordnet ist) einen eigenen
-   Luftfeuchtigkeitssensor und einen Grenzwert (Standard 40 %) hinterlegen,
+   Luftfeuchtigkeitssensor und einen Grenzwert hinterlegen (vorbelegt je nach
+   Material, siehe "Luftfeuchtigkeits-Grenzwerte" unten),
    optional einen Schwellwert für die Bestandswarnung (z. B. 15 %), und
    optional ein oder mehrere Notify-Ziele sowie ob zusätzlich eine
    dauerhafte Benachrichtigung angezeigt werden soll (siehe
@@ -139,6 +140,26 @@ Luftfeuchtigkeit angezeigt (siehe "Dashboard-Karte" unten).
 - `ha_filament_manager.refill_spool` – setzt die Restmenge zurück (Feld
   `amount`, ohne Angabe wird auf das Gesamtgewicht zurückgesetzt) – z. B.
   beim Einlegen einer neuen Spule.
+
+## Luftfeuchtigkeits-Grenzwerte
+
+Filamente reagieren unterschiedlich empfindlich auf Feuchtigkeit. Beim
+Anlegen einer Spule wird der Grenzwert daher passend zum Material
+vorbelegt (Warnung, sobald die gemessene relative Luftfeuchtigkeit darüber
+liegt):
+
+| Material | Vorbelegter Grenzwert |
+|---|---|
+| PLA, ABS, ASA, HIPS | 50 % |
+| PETG | 40 % |
+| TPU, PC | 30 % |
+| Nylon, PVA | 20 % |
+| Sonstiges | 40 % |
+
+Das sind Faustwerte, keine Normen – der Wert bleibt frei änderbar, und die
+Angaben deines Filamentherstellers haben Vorrang. Bei einer **Filamentbox**
+gibt es keinen Materialbezug: dort ist der Grenzwert vorbelegt mit 40 % und
+sollte passend zum empfindlichsten darin gelagerten Material gewählt werden.
 
 ## Benachrichtigungen
 

@@ -19,6 +19,7 @@ from custom_components.ha_filament_manager.const import (
     CONF_NOTIFY_TARGETS,
     CONF_PERSISTENT_NOTIFICATION,
     CONF_TOTAL_WEIGHT,
+    DEFAULT_HUMIDITY_MAX,
     DOMAIN,
     SUBENTRY_TYPE_BOX,
     SUBENTRY_TYPE_SPOOL,
@@ -204,6 +205,34 @@ async def test_config_flow_suggests_total_weight_from_material(hass: HomeAssista
         {CONF_MATERIAL: "PLA", CONF_COLOR: "Schwarz", "manufacturer": ""},
     )
     assert _schema_default(result2["data_schema"], CONF_TOTAL_WEIGHT) == 1000
+
+
+async def test_config_flow_defaults_to_petg(hass: HomeAssistant) -> None:
+    hub = await _setup_hub(hass)
+    result = await _start_spool_flow(hass, hub)
+    assert _schema_default(result["data_schema"], CONF_MATERIAL) == "PETG"
+
+
+async def test_config_flow_suggests_humidity_max_from_material(hass: HomeAssistant) -> None:
+    hub = await _setup_hub(hass)
+
+    # Hygroscopic materials get a much stricter threshold than PLA.
+    for material, expected in (("Nylon", 20), ("TPU", 30), ("PETG", 40), ("PLA", 50)):
+        result = await _start_spool_flow(hass, hub)
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"],
+            {CONF_MATERIAL: material, CONF_COLOR: "Schwarz", "manufacturer": ""},
+        )
+        assert result["step_id"] == "details"
+        assert _schema_default(result["data_schema"], CONF_HUMIDITY_MAX) == expected
+
+    # Unknown materials fall back to the generic default.
+    result = await _start_spool_flow(hass, hub)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {CONF_MATERIAL: "Sonstiges", CONF_COLOR: "Schwarz", "manufacturer": ""},
+    )
+    assert _schema_default(result["data_schema"], CONF_HUMIDITY_MAX) == DEFAULT_HUMIDITY_MAX
 
 
 async def test_reconfigure_flow_updates_material(hass: HomeAssistant) -> None:
