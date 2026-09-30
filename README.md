@@ -219,7 +219,9 @@ dargestellt; nicht zugeordnete Spulen erscheinen wie bisher einzeln
 darunter. Per Klick auf die Kopfzeile (Boxname) lässt sich eine Box
 ein-/ausklappen: eingeklappt werden die einzelnen Spulen ausgeblendet und
 stattdessen nur ein kleiner Farbpunkt je enthaltener Spule angezeigt
-(Klapp-Zustand gilt nur für die aktuelle Browser-Sitzung). Pro Spule
+(der per Klick gesetzte Zustand gilt nur, bis die Seite neu geladen wird;
+ob Boxen beim Laden standardmäßig ein- oder ausgeklappt starten, stellst du
+in der Karte ein, siehe unten). Pro Spule
 zweizeilig aufgebaut: Name/Material/Farbe, darunter der
 Fortschrittsbalken mit Füllstand in % und Restgewicht in Gramm; bei Spulen
 ohne Box zusätzlich rechts (falls ein eigener Luftfeuchtigkeitssensor
@@ -229,11 +231,12 @@ auswählen, oder per YAML:
 
 ```yaml
 type: custom:filament-manager-card
-title: Meine Spulen  # optional, per UI-Editor (Stift-Symbol) änderbar
+title: Meine Spulen   # optional
+collapse_boxes: true  # optional: Filamentboxen starten eingeklappt (Standard: false)
 ```
 
-Der Titel lässt sich auch über den visuellen Karten-Editor setzen (Stift-Symbol
-auf der Karte), ohne YAML zu bearbeiten.
+Titel und Ein-/Ausklapp-Standard lassen sich auch über den visuellen
+Karten-Editor setzen (Stift-Symbol auf der Karte), ohne YAML zu bearbeiten.
 
 Ein Klick auf eine Zeile öffnet die Detailansicht der **Restmenge** (dort
 direkt editierbar); ein Klick auf das Luftfeuchtigkeits-Symbol (auch in der

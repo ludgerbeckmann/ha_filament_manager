@@ -49,14 +49,30 @@ function percentTone(percent) {
 class FilamentManagerCard extends HTMLElement {
   constructor() {
     super();
-    // Which boxes are collapsed (by device id), so their spools are hidden
-    // and only the header row (name + a small dot per spool's color) shows.
-    // UI-only state, deliberately not part of `_data`/`_lastSignature`.
-    this._collapsedBoxes = new Set();
+    // Boxes the viewer has toggled by hand (device id -> collapsed?), which
+    // wins over the card's `collapse_boxes` default. A collapsed box hides
+    // its spools and shows only the header row (name + a small dot per
+    // spool's color). UI-only state, deliberately not part of
+    // `_data`/`_lastSignature` and lost on reload - the config default is
+    // what applies again then.
+    this._boxToggles = new Map();
   }
 
   setConfig(config) {
+    const previous = this._config;
     this._config = config || {};
+    if (previous && Boolean(previous.collapse_boxes) !== Boolean(this._config.collapse_boxes)) {
+      // The default changed (e.g. in the visual editor): apply it to every box.
+      this._boxToggles.clear();
+      this._lastSignature = undefined;
+      this._renderIfReady();
+    }
+  }
+
+  _isBoxCollapsed(deviceId) {
+    return this._boxToggles.has(deviceId)
+      ? this._boxToggles.get(deviceId)
+      : Boolean(this._config && this._config.collapse_boxes);
   }
 
   set hass(hass) {
@@ -68,7 +84,7 @@ class FilamentManagerCard extends HTMLElement {
     const data = this._data || { boxes: [], ungrouped: [] };
     const rows =
       data.boxes.reduce(
-        (sum, box) => sum + (this._collapsedBoxes.has(box.deviceId) ? 1 : 1 + box.spools.length),
+        (sum, box) => sum + (this._isBoxCollapsed(box.deviceId) ? 1 : 1 + box.spools.length),
         0
       ) + data.ungrouped.length;
     return Math.max(1, rows) + 1;
@@ -260,7 +276,7 @@ class FilamentManagerCard extends HTMLElement {
   }
 
   _renderBoxSection(box) {
-    const isCollapsed = this._collapsedBoxes.has(box.deviceId);
+    const isCollapsed = this._isBoxCollapsed(box.deviceId);
 
     // Whole percent, in a fixed-width slot: sensors report anything from "50"
     // to "37.47", which would otherwise shift the color dots left and right
@@ -459,11 +475,7 @@ class FilamentManagerCard extends HTMLElement {
     this.shadowRoot.querySelectorAll(".box-header[data-toggle-box]").forEach((header) => {
       const boxId = header.getAttribute("data-toggle-box");
       header.addEventListener("click", () => {
-        if (this._collapsedBoxes.has(boxId)) {
-          this._collapsedBoxes.delete(boxId);
-        } else {
-          this._collapsedBoxes.add(boxId);
-        }
+        this._boxToggles.set(boxId, !this._isBoxCollapsed(boxId));
         this._render(this._data);
       });
     });
@@ -492,7 +504,8 @@ window.customCards.push({
 });
 
 /**
- * Minimal visual editor: just the (optional) card title, so Lovelace's
+ * Minimal visual editor: the (optional) card title and whether filament
+ * boxes start collapsed, so Lovelace's
  * "Visual editor not supported" fallback notice no longer shows up. Uses a
  * plain native <input> styled to match Home Assistant: <ha-textfield> is only
  * registered once some other part of the frontend has loaded it, so relying
@@ -538,7 +551,7 @@ class FilamentManagerCardEditor extends HTMLElement {
           margin: 0 0 4px 4px;
           color: var(--secondary-text-color);
         }
-        input {
+        input[type="text"] {
           box-sizing: border-box;
           width: 100%;
           height: 56px;
@@ -552,38 +565,63 @@ class FilamentManagerCardEditor extends HTMLElement {
           border-radius: 4px 4px 0 0;
           outline: none;
         }
-        input:hover { border-bottom-color: var(--primary-text-color); }
-        input:focus {
+        input[type="text"]:hover { border-bottom-color: var(--primary-text-color); }
+        input[type="text"]:focus {
           border-bottom: 2px solid var(--primary-color);
           padding-bottom: 1px;
+        }
+        .option {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-top: 16px;
+          padding: 0 4px;
+          color: var(--primary-text-color);
+          cursor: pointer;
+        }
+        .option input {
+          width: 18px;
+          height: 18px;
+          margin: 0;
+          padding: 0;
+          accent-color: var(--primary-color);
+          cursor: pointer;
         }
       </style>
       <div class="form">
         <label for="title">Titel (leer lassen für „Filament Manager“)</label>
         <input id="title" type="text" autocomplete="off" />
+        <label class="option">
+          <input id="collapse" type="checkbox" />
+          Filamentboxen standardmäßig eingeklappt anzeigen
+        </label>
       </div>
     `;
 
-    const field = this.shadowRoot.querySelector("input");
-    field.addEventListener("input", (event) => this._titleChanged(event));
+    this.shadowRoot.querySelector("#title").addEventListener("input", (event) => {
+      this._updateConfig("title", event.target.value || undefined);
+    });
+    this.shadowRoot.querySelector("#collapse").addEventListener("change", (event) => {
+      this._updateConfig("collapse_boxes", event.target.checked || undefined);
+    });
   }
 
   _syncField() {
-    const field = this.shadowRoot.querySelector("input");
-    if (!field || this.shadowRoot.activeElement === field) return;
+    const field = this.shadowRoot.querySelector("#title");
     const desired = this._config.title || "";
-    if (field.value !== desired) {
+    if (this.shadowRoot.activeElement !== field && field.value !== desired) {
       field.value = desired;
     }
+    this.shadowRoot.querySelector("#collapse").checked = Boolean(this._config.collapse_boxes);
   }
 
-  _titleChanged(event) {
-    const value = event.target.value;
+  /** Set (or, for `undefined`, remove) one config key and tell Lovelace. */
+  _updateConfig(key, value) {
     const newConfig = { ...this._config };
-    if (value) {
-      newConfig.title = value;
+    if (value === undefined) {
+      delete newConfig[key];
     } else {
-      delete newConfig.title;
+      newConfig[key] = value;
     }
     this._config = newConfig;
 
