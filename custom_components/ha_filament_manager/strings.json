@@ -2,15 +2,37 @@
   "config": {
     "step": {
       "user": {
-        "title": "Add a Filament Manager hub",
-        "description": "A hub groups filament spools and boxes - e.g. one hub per filament box. Spools and boxes are added afterwards from the hub's entry (the \"+ Add\" button).",
+        "title": "Add a filament box",
+        "description": "Every hub is one filament box (or shelf); its spools are added afterwards from the hub's entry (the \"+ Add\" button). Leave the humidity limit and delay empty to use the values of the most sensitive material stored in the box; leave the maximum number of spools empty for no limit.",
         "data": {
-          "name": "Hub name"
+          "name": "Name",
+          "humidity_sensor": "Humidity sensor (optional)",
+          "humidity_max": "Maximum humidity (empty = automatic)",
+          "humidity_delay": "Alert only after (minutes, empty = automatic)",
+          "notify_targets": "Notify (optional)",
+          "persistent_notification": "Also show a persistent notification",
+          "spool_limit": "Maximum number of spools (empty = unlimited)"
+        }
+      },
+      "reconfigure": {
+        "title": "Edit filament box",
+        "description": "Update the box's name, humidity, notification and spool-limit settings. Leave the limit and delay empty to use the values of the most sensitive material stored in the box.",
+        "data": {
+          "name": "Name",
+          "humidity_sensor": "Humidity sensor (optional)",
+          "humidity_max": "Maximum humidity (empty = automatic)",
+          "humidity_delay": "Alert only after (minutes, empty = automatic)",
+          "notify_targets": "Notify (optional)",
+          "persistent_notification": "Also show a persistent notification",
+          "spool_limit": "Maximum number of spools (empty = unlimited)"
         }
       }
     },
     "error": {
-      "name_required": "Please enter a name for the hub."
+      "name_required": "Please enter a name for the filament box."
+    },
+    "abort": {
+      "reconfigure_successful": "Reconfiguration successful."
     }
   },
   "config_subentries": {
@@ -31,15 +53,11 @@
         },
         "details": {
           "title": "Spool details",
-          "description": "Total weight is suggested from the material/manufacturer you picked where known, otherwise a generic default - always editable. The maximum humidity is pre-filled to suit the material (e.g. 20% for Nylon, 50% for PLA).",
+          "description": "Total weight is suggested from the material/manufacturer you picked where known, otherwise a generic default - always editable.",
           "data": {
             "diameter": "Diameter",
             "total_weight": "Total weight (new spool)",
             "initial_remaining_weight": "Current remaining weight",
-            "box_subentry_id": "Filament box (optional)",
-            "humidity_sensor": "Humidity sensor (optional, ignored if a filament box is selected above)",
-            "humidity_max": "Maximum humidity",
-            "humidity_delay": "Alert only after (minutes above the limit)",
             "low_stock_threshold": "Low stock warning below (optional, e.g. 15)",
             "notify_targets": "Notify (optional)",
             "persistent_notification": "Also show a persistent notification"
@@ -62,10 +80,6 @@
             "manufacturer": "Manufacturer",
             "diameter": "Diameter",
             "total_weight": "Total weight (new spool)",
-            "box_subentry_id": "Filament box (optional)",
-            "humidity_sensor": "Humidity sensor (optional, ignored if a filament box is selected above)",
-            "humidity_max": "Maximum humidity",
-            "humidity_delay": "Alert only after (minutes above the limit)",
             "low_stock_threshold": "Low stock warning below (optional, e.g. 15)",
             "notify_targets": "Notify (optional)",
             "persistent_notification": "Also show a persistent notification"
@@ -74,49 +88,11 @@
       },
       "error": {
         "name_required": "Please enter a name for the spool.",
-        "remaining_exceeds_total": "The remaining weight cannot be greater than the total weight.",
-        "box_full": "This filament box is already full (max. 4 spools)."
+        "remaining_exceeds_total": "The remaining weight cannot be greater than the total weight."
       },
       "abort": {
-        "reconfigure_successful": "Reconfiguration successful."
-      }
-    },
-    "box": {
-      "entry_type": "Filament box",
-      "initiate_flow": {
-        "user": "Add filament box"
-      },
-      "step": {
-        "user": {
-          "title": "Add a filament box",
-          "description": "A filament box groups up to 4 spools (e.g. a dry box) and can carry a single shared humidity sensor for all of them. Leave the limit and delay empty to use the values of the most sensitive material stored in the box.",
-          "data": {
-            "name": "Name",
-            "humidity_sensor": "Humidity sensor (optional)",
-            "humidity_max": "Maximum humidity (empty = automatic)",
-            "humidity_delay": "Alert only after (minutes, empty = automatic)",
-            "notify_targets": "Notify (optional)",
-            "persistent_notification": "Also show a persistent notification"
-          }
-        },
-        "reconfigure": {
-          "title": "Edit filament box",
-          "description": "Update the box's name and humidity settings. Leave the limit and delay empty to use the values of the most sensitive material stored in the box.",
-          "data": {
-            "name": "Name",
-            "humidity_sensor": "Humidity sensor (optional)",
-            "humidity_max": "Maximum humidity (empty = automatic)",
-            "humidity_delay": "Alert only after (minutes, empty = automatic)",
-            "notify_targets": "Notify (optional)",
-            "persistent_notification": "Also show a persistent notification"
-          }
-        }
-      },
-      "error": {
-        "name_required": "Please enter a name for the box."
-      },
-      "abort": {
-        "reconfigure_successful": "Reconfiguration successful."
+        "reconfigure_successful": "Reconfiguration successful.",
+        "box_full": "This filament box is already full."
       }
     }
   },
@@ -135,6 +111,9 @@
       },
       "color": {
         "name": "Color"
+      },
+      "spool_count": {
+        "name": "Spools"
       }
     },
     "binary_sensor": {

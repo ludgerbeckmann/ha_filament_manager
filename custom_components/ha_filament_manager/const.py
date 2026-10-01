@@ -18,25 +18,19 @@ CONF_HUMIDITY_DELAY: Final = "humidity_delay"
 CONF_LOW_STOCK_THRESHOLD: Final = "low_stock_threshold"
 CONF_NOTIFY_TARGETS: Final = "notify_targets"
 CONF_PERSISTENT_NOTIFICATION: Final = "persistent_notification"
-# References another subentry's `subentry_id` (a filament box).
-CONF_BOX: Final = "box_subentry_id"
+# Optional upper limit on the number of spools in a hub (empty = unlimited).
+CONF_SPOOL_LIMIT: Final = "spool_limit"
 
-# A config entry is a hub - several can exist (e.g. one per filament box);
-# every spool and filament box is a config subentry of one hub, told apart
-# by ConfigSubentry.subentry_type.
+# A config entry is a hub, and a hub *is* one filament box (or shelf): its
+# data holds the box's humidity sensor, limits and notification settings.
+# Every spool is a config subentry of a hub.
 SUBENTRY_TYPE_SPOOL: Final = "spool"
-SUBENTRY_TYPE_BOX: Final = "box"
-
-# Physical constraint of the filament dry boxes this grouping models: each
-# one holds at most four spools.
-MAX_SPOOLS_PER_BOX: Final = 4
 
 DEFAULT_TOTAL_WEIGHT: Final = 1000
 DEFAULT_HUMIDITY_MAX: Final = 40
 DEFAULT_HUMIDITY_DELAY: Final = 30
 DEFAULT_MATERIAL: Final = "PETG"
 DEFAULT_DIAMETER: Final = "1.75"
-DEFAULT_HUB_NAME: Final = "Filament Manager"
 
 MATERIAL_OPTIONS: Final[list[str]] = [
     "PLA",

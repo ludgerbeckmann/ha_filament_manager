@@ -11,24 +11,22 @@ schlanke, native Home-Assistant-Integration ohne externen Server.
 
 ## Funktionen
 
-- Die Integration legt **einen einzigen Eintrag** unter *Einstellungen →
-  Geräte & Dienste* an. Filamentspulen und -boxen werden darin als
-  Unterobjekte verwaltet (hinzufügen/bearbeiten/löschen über den Eintrag
-  selbst) – keine separate Integrationsinstanz pro Spule mehr.
+- Ein **Hub** (Eintrag unter *Einstellungen → Geräte & Dienste*) ist **eine
+  Filamentbox oder ein Regal**. Du legst beliebig viele Hubs an, z. B. einen
+  pro Filamentbox; die Spulen werden darin als Unterobjekte verwaltet
+  (hinzufügen/bearbeiten/löschen über den Eintrag selbst).
 - Jede Filamentspule wird als eigenes Gerät angelegt, mit **Name, Material,
   Farbe, Hersteller, Durchmesser** und **Gesamt-/Restgewicht**.
 - Die Restmenge lässt sich direkt im Dashboard anpassen (editierbare
   `number`-Entität) oder per Service aktualisieren.
 - Ein Sensor zeigt den **Füllstand in Prozent** – ideal für
   Balken-/Glance-Karten auf dem Dashboard.
-- Optional kann pro Spule ein vorhandener **Luftfeuchtigkeitssensor**
-  hinterlegt werden (z. B. ein Hygrometer in der Trockenbox). Überschreitet
-  die gemessene Luftfeuchtigkeit den konfigurierten Grenzwert, schaltet ein
-  `binary_sensor` auf "Warnung".
-- **Filamentboxen**: bis zu 4 Spulen lassen sich zu einer physischen
-  Trockenbox gruppieren, die einen einzigen gemeinsamen
-  Luftfeuchtigkeitssensor für alle zugeordneten Spulen trägt (siehe
-  "Filamentboxen" unten).
+- Optional kann pro Hub (Filamentbox) ein vorhandener
+  **Luftfeuchtigkeitssensor** hinterlegt werden (z. B. ein Hygrometer in der
+  Trockenbox). Überschreitet die gemessene Luftfeuchtigkeit den Grenzwert,
+  schaltet ein `binary_sensor` auf "Warnung" – Grenzwert und Verzögerung
+  richten sich automatisch nach dem empfindlichsten Material in der Box
+  (siehe "Luftfeuchtigkeits-Grenzwerte" unten).
 - Optional außerdem eine **Warnung bei niedrigem Bestand** (Schwellwert in %
   frei wählbar).
 - Beide Warnungen können automatisch **Push-Benachrichtigungen** verschicken
@@ -56,45 +54,49 @@ und Home Assistant neu starten.
 
 ## Einrichtung
 
-Über *Einstellungen → Geräte & Dienste → Integration hinzufügen* → nach
-"Filament Manager" suchen und einen **Hub** anlegen. Du vergibst dabei nur
-einen Namen (z. B. "Filamentbox 1"). Spulen und Boxen werden anschließend
-über die "+ Hinzufügen"-Schaltflächen des Hubs als Unterobjekte angelegt.
+### Hub (Filamentbox) anlegen
 
-Du kannst **beliebig viele Hubs** anlegen – etwa einen pro Filamentbox, in dem
-die Box und ihre Spulen zusammen liegen, oder einen für Spulen ohne Box. Eine
-Spule kann nur einer Box **ihres eigenen Hubs** zugeordnet werden. Ist im Hub
-genau eine Box vorhanden, ist sie beim Anlegen einer Spule vorausgewählt. Die
-Dashboard-Karte zeigt die Inhalte aller Hubs gemeinsam an.
+*Einstellungen → Geräte & Dienste → Integration hinzufügen* → nach "Filament
+Manager" suchen. Im Dialog **Filamentbox hinzufügen** legst du fest:
+
+- den **Namen** (z. B. "Filamentbox 1"),
+- optional einen **Luftfeuchtigkeitssensor** der Box,
+- optional **Grenzwert** und **Verzögerung** der Luftfeuchtigkeitswarnung –
+  leer lassen für die Automatik nach dem empfindlichsten Material in der Box,
+- optional **Notify-Ziele** und ob zusätzlich eine dauerhafte
+  Benachrichtigung angezeigt werden soll (siehe "Benachrichtigungen"),
+- optional die **maximale Spulenanzahl** – leer lassen für keine Begrenzung.
+
+Du kannst **beliebig viele Hubs** anlegen, z. B. einen pro Filamentbox oder
+ein "Regal" ohne Sensor für lose Spulen. Die Dashboard-Karte zeigt die
+Inhalte aller Hubs gemeinsam an. Die Einstellungen eines Hubs änderst du
+über das Drei-Punkte-Menü des Eintrags → **Neu konfigurieren**.
+
+> **Hinweis (ab v0.10.0):** Der Hub *ist* die Filamentbox – es gibt keine
+> separaten Box-Unterobjekte mehr. Hubs, Boxen und Spulen aus älteren
+> Versionen müssen neu angelegt werden (alten Eintrag löschen, neuen Hub
+> anlegen).
 
 ### Spule anlegen
 
-Im gewünschten Hub "+ Hinzufügen" → **Filamentspule** wählen:
+Im gewünschten Hub "+ Spule hinzufügen". Die Spule gehört automatisch zur
+Filamentbox ihres Hubs:
 
-1. Material (vorbelegt: PETG) und Farbe (beides Dropdowns mit gängigen Werten, aber frei
-   überschreibbar) sowie optional Hersteller (ebenfalls Dropdown mit
-   bekannten Marken) auswählen.
+1. Material (vorbelegt: PETG) und Farbe (beides Dropdowns mit gängigen
+   Werten, alphabetisch sortiert, aber frei überschreibbar) sowie optional
+   Hersteller (ebenfalls Dropdown mit bekannten Marken) auswählen.
 2. Durchmesser, Gesamtgewicht und (falls schon angebrochen) aktuelle
    Restmenge eintragen. Das Gesamtgewicht ist bereits vorbelegt: mit einem
    bekannten Realwert, falls für die Kombination aus Hersteller und Material
    einer hinterlegt ist, sonst mit einem branchenüblichen Standardwert (z. B.
    500 g für TPU/PVA, sonst 1000 g) – in jedem Fall frei überschreibbar.
-3. Optional eine bereits angelegte **Filamentbox** auswählen, um die Spule
-   ihr zuzuordnen (siehe "Filamentboxen" unten). Falls zugeordnet, übernimmt
-   die Box die Luftfeuchtigkeitsüberwachung für diese Spule – ein eigener
-   Luftfeuchtigkeitssensor der Spule wird dann ignoriert.
-4. Optional (falls keine Box zugeordnet ist) einen eigenen
-   Luftfeuchtigkeitssensor und einen Grenzwert hinterlegen (vorbelegt je nach
-   Material, siehe "Luftfeuchtigkeits-Grenzwerte" unten),
-   optional einen Schwellwert für die Bestandswarnung (z. B. 15 %), und
-   optional ein oder mehrere Notify-Ziele sowie ob zusätzlich eine
-   dauerhafte Benachrichtigung angezeigt werden soll (siehe
-   "Benachrichtigungen" unten).
-5. Im letzten Schritt einen Namen vergeben – vorbelegt mit einem Vorschlag
+3. Optional einen Schwellwert für die Bestandswarnung (z. B. 15 %) sowie ein
+   oder mehrere Notify-Ziele und ob zusätzlich eine dauerhafte
+   Benachrichtigung angezeigt werden soll (siehe "Benachrichtigungen").
+4. Im letzten Schritt einen Namen vergeben – vorbelegt mit einem Vorschlag
    aus Hersteller, Material und Farbe (z. B. "Prusament PETG Rot"), kann
    aber beliebig angepasst werden.
-6. Für eine weitere Spule den Vorgang wiederholen ("+ Hinzufügen" →
-   erneut **Filamentspule** wählen).
+5. Für eine weitere Spule den Vorgang wiederholen.
 
 Bekannte Gesamtgewichte für bestimmte Hersteller/Material-Kombinationen
 sind in `custom_components/ha_filament_manager/const.py`
@@ -102,29 +104,14 @@ sind in `custom_components/ha_filament_manager/const.py`
 ergänzen, sobald reale Werte bekannt sind.
 
 Bestehende Spulen lassen sich über das Zahnrad-Symbol der jeweiligen Spule
-in ihrem Hub bearbeiten (Material, Farbe, Gesamtgewicht,
-Filamentbox, Luftfeuchtigkeitssensor usw.). Die Restmenge wird dort bewusst
-nicht verändert – dafür gibt es die `number`-Entität und die Dienste unten.
+in ihrem Hub bearbeiten (Material, Farbe, Gesamtgewicht usw.). Die Restmenge
+wird dort bewusst nicht verändert – dafür gibt es die `number`-Entität und
+die Dienste unten.
 
-## Filamentboxen
-
-Eine **Filamentbox** bildet eine physische Trockenbox ab, in die bis zu
-**4 Spulen** passen und die mit einem einzigen Luftfeuchtigkeitssensor
-ausgestattet ist. Statt den Sensor mehrfach je Spule zu hinterlegen, wird er
-einmal an der Box konfiguriert:
-
-1. Im gewünschten Hub "+ Hinzufügen" → **Filamentbox** wählen.
-2. Namen (z. B. "Trockenbox 1") sowie optional Luftfeuchtigkeitssensor,
-   Grenzwert und Benachrichtigungseinstellungen hinterlegen (siehe
-   "Benachrichtigungen" unten – funktioniert für Boxen genauso wie für
-   Spulen).
-3. Beim Anlegen oder Bearbeiten einer Spule die Box im Feld "Filamentbox"
-   auswählen.
-
-Eine Box, die bereits 4 zugeordnete Spulen hat, kann keiner weiteren Spule
-mehr zugewiesen werden. Auf dem Dashboard werden Spulen einer Box
-gruppiert unter einer gemeinsamen Kopfzeile mit Boxname und
-Luftfeuchtigkeit angezeigt (siehe "Dashboard-Karte" unten).
+Hat der Hub eine maximale Spulenanzahl und ist sie erreicht, lässt sich keine
+weitere Spule anlegen. Auf dem Dashboard werden die Spulen eines Hubs
+gruppiert unter einer gemeinsamen Kopfzeile mit Boxname und Luftfeuchtigkeit
+angezeigt (siehe "Dashboard-Karte" unten).
 
 ## Entitäten
 
@@ -134,9 +121,9 @@ Luftfeuchtigkeit angezeigt (siehe "Dashboard-Karte" unten).
 | `sensor.<spule>_remaining_percentage` | Füllstand in % |
 | `sensor.<spule>_material` | Materialtyp (z. B. PLA, PETG) |
 | `sensor.<spule>_color` | Farbe |
-| `binary_sensor.<spule>_humidity_alert` | Nur vorhanden, wenn die Spule (ohne Filamentbox) einen eigenen Luftfeuchtigkeitssensor hat |
 | `binary_sensor.<spule>_low_stock_alert` | Nur vorhanden, wenn ein Bestandsschwellwert hinterlegt wurde |
-| `binary_sensor.<box>_humidity_alert` | Gemeinsame Luftfeuchtigkeitswarnung einer Filamentbox, nur vorhanden, wenn die Box einen Sensor hat |
+| `sensor.<box>_spools` | Anzahl der Spulen in der Filamentbox (dem Hub) |
+| `binary_sensor.<box>_humidity_alert` | Luftfeuchtigkeitswarnung der Filamentbox, nur vorhanden, wenn die Box einen Sensor hat |
 
 ## Dienste
 
@@ -149,12 +136,12 @@ Luftfeuchtigkeit angezeigt (siehe "Dashboard-Karte" unten).
 
 ## Luftfeuchtigkeits-Grenzwerte
 
-Filamente reagieren unterschiedlich empfindlich auf Feuchtigkeit. Beim
-Anlegen einer Spule wird der Grenzwert daher passend zum Material
-vorbelegt (Warnung, sobald die gemessene relative Luftfeuchtigkeit darüber
-liegt):
+Filamente reagieren unterschiedlich empfindlich auf Feuchtigkeit. Der
+Grenzwert der Filamentbox richtet sich daher nach dem empfindlichsten
+darin gelagerten Material (Warnung, sobald die gemessene relative
+Luftfeuchtigkeit darüber liegt):
 
-| Material | Vorbelegter Grenzwert |
+| Material | Grenzwert |
 |---|---|
 | PLA, ABS, ASA, HIPS | 50 % |
 | PETG | 40 % |
@@ -167,9 +154,9 @@ Die Warnung schaltet erst, wenn die Luftfeuchtigkeit so lange am Stück über
 dem Grenzwert lag. Kurze Ausreißer (Box öffnen, Spulenwechsel) lösen so
 keinen Alarm aus – Filament nimmt Feuchtigkeit erst über Stunden auf. Fällt
 der Wert zwischendurch unter den Grenzwert, beginnt die Wartezeit von vorn;
-die Warnung endet weiterhin sofort. Auch sie ist je nach Material vorbelegt:
+die Warnung endet weiterhin sofort. Auch sie richtet sich nach dem Material:
 
-| Material | Vorbelegte Verzögerung |
+| Material | Verzögerung |
 |---|---|
 | PLA, ABS, ASA, HIPS | 60 min |
 | PETG | 30 min |
@@ -177,29 +164,26 @@ die Warnung endet weiterhin sofort. Auch sie ist je nach Material vorbelegt:
 | Nylon, PVA | 10 min |
 | Sonstiges | 30 min |
 
-`0` warnt sofort. Bereits vorhandene Spulen ohne gespeicherten Wert warnen wie bisher sofort,
-bis du die Verzögerung einträgst (Zahnrad der Spule → Speichern übernimmt den
-vorbelegten Wert). Bereits vorhandene Boxen ohne Verzögerung nutzen die
-Automatik.
+`0` warnt sofort.
 
 Das sind Faustwerte, keine Normen – der Wert bleibt frei änderbar, und die
 Angaben deines Filamentherstellers haben Vorrang.
 
-### Filamentboxen: automatische Werte
+### Automatik oder eigene Werte
 
-Eine **Filamentbox** hat kein eigenes Material. Lässt du bei ihr Grenzwert
-und/oder Verzögerung **leer**, gelten automatisch die strengsten Werte der
-darin gelagerten Spulen: der niedrigste Grenzwert und die kürzeste
-Verzögerung. Bei Nylon (20 %, 10 min) und PLA (50 %, 60 min) in derselben
-Box gilt also 20 % / 10 min. Wird eine Spule in die Box gelegt, herausgenommen
-oder ihr Material geändert, passen sich die Werte automatisch an. Eine leere
-Box nutzt 40 % / 30 min. Trägst du einen Wert ein, hat er immer Vorrang;
-durch Leeren des Feldes ("Neu konfigurieren") kehrst du zur Automatik zurück.
+Lässt du beim Hub (der Filamentbox) Grenzwert und/oder Verzögerung **leer**,
+gelten automatisch die strengsten Werte der darin gelagerten Spulen: der
+niedrigste Grenzwert und die kürzeste Verzögerung. Bei Nylon (20 %, 10 min)
+und PLA (50 %, 60 min) in derselben Box gilt also 20 % / 10 min. Wird eine
+Spule angelegt, entfernt oder ihr Material geändert, passen sich die Werte
+automatisch an. Ein leerer Hub nutzt 40 % / 30 min. Trägst du einen Wert
+ein, hat er immer Vorrang; durch Leeren des Feldes ("Neu konfigurieren")
+kehrst du zur Automatik zurück.
 
 ## Benachrichtigungen
 
-Sowohl die Luftfeuchtigkeits- als auch die Bestandswarnung können pro Spule
-automatisch benachrichtigen, sobald der jeweilige `binary_sensor` von "aus"
+Sowohl die Luftfeuchtigkeitswarnung (pro Filamentbox) als auch die
+Bestandswarnung (pro Spule) können automatisch benachrichtigen, sobald der jeweilige `binary_sensor` von "aus"
 auf "an" wechselt (keine eigene Automation nötig):
 
 - **Push-Benachrichtigung**: ein oder mehrere Notify-Ziele auswählbar (z. B.
@@ -210,7 +194,7 @@ auf "an" wechselt (keine eigene Automation nötig):
   Grenzwert, oder Spule aufgefüllt).
 
 Beide Kanäle sind optional und unabhängig voneinander zuschaltbar, über das
-Zahnrad-Symbol der jeweiligen Spule bzw. Box nachträglich änderbar.
+Zahnrad-Symbol der jeweiligen Spule bzw. über "Neu konfigurieren" der Box nachträglich änderbar.
 
 ## Dashboard-Karte
 
@@ -219,10 +203,8 @@ Zahnrad-Symbol der jeweiligen Spule bzw. Box nachträglich änderbar.
 Die Integration liefert eine eigene Lovelace-Karte mit, die **automatisch
 alle Spulen** anzeigt und sich selbst beim Frontend registriert – keine
 zusätzliche Ressource unter *Einstellungen → Dashboards → Ressourcen*
-nötig. Spulen, die einer Filamentbox zugeordnet sind, werden darin unter
-einer gemeinsamen Kopfzeile (Boxname + Luftfeuchtigkeit) gruppiert
-dargestellt; nicht zugeordnete Spulen erscheinen wie bisher einzeln
-darunter. Per Klick auf die Kopfzeile (Boxname) lässt sich eine Box
+nötig. Die Spulen eines Hubs werden darin unter einer gemeinsamen
+Kopfzeile (Boxname + Luftfeuchtigkeit) gruppiert dargestellt. Per Klick auf die Kopfzeile (Boxname) lässt sich eine Box
 ein-/ausklappen: eingeklappt werden die einzelnen Spulen ausgeblendet und
 stattdessen nur ein kleiner Farbpunkt je enthaltener Spule angezeigt
 (der per Klick gesetzte Zustand gilt nur, bis die Seite neu geladen wird;

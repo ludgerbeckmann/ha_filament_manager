@@ -63,7 +63,7 @@ class FilamentRemainingWeightNumber(RestoreNumber):
         self._entry = entry
         self._subentry = subentry
         self._attr_unique_id = f"{subentry.subentry_id}_remaining_weight"
-        self._attr_device_info = spool_device_info(subentry)
+        self._attr_device_info = spool_device_info(entry, subentry)
         self._attr_native_max_value = subentry.data[CONF_TOTAL_WEIGHT]
 
     async def async_added_to_hass(self) -> None:
