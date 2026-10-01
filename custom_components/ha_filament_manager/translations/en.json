@@ -96,7 +96,15 @@
       }
     },
     "box": {
-      "entry_type": "Filament box"
+      "entry_type": "Filament box",
+      "initiate_flow": {
+        "user": "Add filament box"
+      },
+      "step": {
+        "user": {
+          "title": "Filament box"
+        }
+      }
     }
   },
   "entity": {

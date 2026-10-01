@@ -96,7 +96,15 @@
       }
     },
     "box": {
-      "entry_type": "Filamentbox"
+      "entry_type": "Filamentbox",
+      "initiate_flow": {
+        "user": "Filamentbox hinzufügen"
+      },
+      "step": {
+        "user": {
+          "title": "Filamentbox"
+        }
+      }
     }
   },
   "entity": {
