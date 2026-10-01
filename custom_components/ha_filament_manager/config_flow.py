@@ -1,10 +1,10 @@
 """Config flow for the Filament Manager integration.
 
-There is exactly one config entry (a singleton hub, see manifest.json's
-"single_config_entry") - setting it up needs no input at all. Every spool
-and filament box is then managed as a config *subentry* of that hub (via its
-"+ Add" menu and the gear icon on each subentry), so there is only ever one
-integration card under Settings -> Devices & Services.
+A config entry is a *hub*, named by the user when it is added (e.g. one hub
+per filament box). Several hubs can exist side by side. Every spool and
+filament box is then managed as a config *subentry* of a hub (via its
+"+ Add" menu and the gear icon on each subentry). A spool can only be
+assigned to a box of its own hub.
 
 Creating a spool subentry is split into three steps: identity (material/
 color/manufacturer), details (diameter, total weight - suggested from the
@@ -46,6 +46,7 @@ from .const import (
     CONF_PERSISTENT_NOTIFICATION,
     CONF_TOTAL_WEIGHT,
     DEFAULT_DIAMETER,
+    DEFAULT_HUB_NAME,
     DEFAULT_MATERIAL,
     DIAMETER_OPTIONS,
     DOMAIN,
@@ -111,14 +112,23 @@ def _identity_fields(defaults: dict[str, Any], *, include_name: bool) -> dict[An
     return fields
 
 
-def _box_selector_field(entry: ConfigEntry, defaults: dict[str, Any]) -> dict[Any, Any]:
-    """A spool's (optional) filament box assignment - omitted if none exist yet."""
+def _box_selector_field(
+    entry: ConfigEntry, defaults: dict[str, Any], *, preselect_single: bool = False
+) -> dict[Any, Any]:
+    """A spool's (optional) filament box assignment - omitted if none exist yet.
+
+    Only boxes of the same hub are offered. With `preselect_single` (when
+    adding a spool), a hub's only box is preselected: a hub typically holds
+    one box and its spools.
+    """
     boxes = box_subentries(entry)
     if not boxes:
         return {}
 
     valid_ids = {box.subentry_id for box in boxes}
     current = defaults.get(CONF_BOX)
+    if current is None and preselect_single and len(boxes) == 1:
+        current = boxes[0].subentry_id
     box_kwargs = {"default": current} if current in valid_ids else {}
 
     return {
@@ -205,7 +215,7 @@ def _details_fields(entry: ConfigEntry, defaults: dict[str, Any], *, include_ini
     if include_initial:
         fields[vol.Optional(CONF_INITIAL_REMAINING_WEIGHT)] = _weight_selector()
 
-    fields.update(_box_selector_field(entry, defaults))
+    fields.update(_box_selector_field(entry, defaults, preselect_single=include_initial))
 
     # Ignored (falls back to a shared alert) once a filament box is assigned
     # above - kept here as a fallback for spools that aren't in a box.
@@ -249,15 +259,25 @@ def _build_reconfigure_schema(entry: ConfigEntry, defaults: dict[str, Any]) -> v
 
 
 class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Set up the Filament Manager hub - a singleton with no configuration of its own."""
+    """Set up a Filament Manager hub - just a named container for spools and boxes."""
 
     VERSION = 1
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Create the (only) hub entry. Spools and boxes are added as subentries afterwards."""
+        """Create a hub entry. Spools and boxes are added as subentries afterwards."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            return self.async_create_entry(title="Filament Manager", data={})
-        return self.async_show_form(step_id="user")
+            name = user_input.get(CONF_NAME, "").strip()
+            if not name:
+                errors["name"] = "name_required"
+            else:
+                return self.async_create_entry(title=name, data={})
+
+        schema = vol.Schema(
+            {vol.Required(CONF_NAME, default=DEFAULT_HUB_NAME): selector.TextSelector()}
+        )
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     @classmethod
     def async_get_supported_subentry_types(

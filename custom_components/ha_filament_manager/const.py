@@ -21,9 +21,9 @@ CONF_PERSISTENT_NOTIFICATION: Final = "persistent_notification"
 # References another subentry's `subentry_id` (a filament box).
 CONF_BOX: Final = "box_subentry_id"
 
-# There is exactly one config entry (a singleton hub, see manifest.json's
-# "single_config_entry"); every spool and filament box is a config
-# subentry of it, told apart by ConfigSubentry.subentry_type.
+# A config entry is a hub - several can exist (e.g. one per filament box);
+# every spool and filament box is a config subentry of one hub, told apart
+# by ConfigSubentry.subentry_type.
 SUBENTRY_TYPE_SPOOL: Final = "spool"
 SUBENTRY_TYPE_BOX: Final = "box"
 
@@ -36,6 +36,7 @@ DEFAULT_HUMIDITY_MAX: Final = 40
 DEFAULT_HUMIDITY_DELAY: Final = 30
 DEFAULT_MATERIAL: Final = "PETG"
 DEFAULT_DIAMETER: Final = "1.75"
+DEFAULT_HUB_NAME: Final = "Filament Manager"
 
 MATERIAL_OPTIONS: Final[list[str]] = [
     "PLA",

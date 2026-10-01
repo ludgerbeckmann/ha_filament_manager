@@ -487,6 +487,62 @@ async def test_box_limits_follow_most_sensitive_material(hass: HomeAssistant) ->
     assert hass.states.get(alert).attributes["delay_minutes"] == 10
 
 
+async def test_hub_flow_asks_for_a_name_and_allows_several_hubs(hass: HomeAssistant) -> None:
+    for name in ("Filamentbox 1", "Filamentbox 2"):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        assert result["type"] == "form"
+        assert result["step_id"] == "user"
+        assert _schema_default(result["data_schema"], "name") == "Filament Manager"
+
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": name})
+        assert result["type"] == "create_entry"
+        assert result["title"] == name
+        await hass.async_block_till_done()
+
+    assert sorted(entry.title for entry in hass.config_entries.async_entries(DOMAIN)) == [
+        "Filamentbox 1",
+        "Filamentbox 2",
+    ]
+
+    # An empty name is rejected.
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "  "})
+    assert result["type"] == "form"
+    assert result["errors"] == {"name": "name_required"}
+
+
+async def test_hubs_are_independent_and_boxes_stay_within_their_hub(hass: HomeAssistant) -> None:
+    hub_a = await _setup_hub(
+        hass,
+        subentries_data=[_box_subentry("Box A"), _spool_subentry(name="unused")],
+    )
+    hub_b = MockConfigEntry(
+        domain=DOMAIN, title="Hub B", subentries_data=[_box_subentry("Box B")]
+    )
+    hub_b.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(hub_b.entry_id)
+    await hass.async_block_till_done()
+
+    # Both hubs are loaded side by side, each with its own entities.
+    assert hub_a.state.value == "loaded"
+    assert hub_b.state.value == "loaded"
+    assert hass.states.get(NUMBER_ENTITY) is not None
+
+    # A spool added in hub A only offers (and, as the only one, preselects)
+    # hub A's box - never hub B's.
+    box_a = _subentry_by_title(hub_a, "Box A")
+    result = await _start_spool_flow(hass, hub_a)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {CONF_MATERIAL: "PETG", CONF_COLOR: "Rot", "manufacturer": ""},
+    )
+    assert result["step_id"] == "details"
+    assert _schema_default(result["data_schema"], CONF_BOX) == box_a.subentry_id
+    box_field = next(key for key in result["data_schema"].schema if key == CONF_BOX)
+    options = result["data_schema"].schema[box_field].config["options"]
+    assert [option["value"] for option in options] == [box_a.subentry_id]
+
+
 async def test_box_flow_leaves_limits_automatic_and_can_reset_them(hass: HomeAssistant) -> None:
     hub = await _setup_hub(hass)
 
