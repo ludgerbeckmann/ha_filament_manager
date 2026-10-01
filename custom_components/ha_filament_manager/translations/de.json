@@ -2,9 +2,15 @@
   "config": {
     "step": {
       "user": {
-        "title": "Filament Manager einrichten",
-        "description": "Filamentspulen und -boxen werden anschließend über diesen Integrationseintrag hinzugefügt (Schaltfläche „+ Hinzufügen“)."
+        "title": "Filament-Manager-Hub hinzufügen",
+        "description": "Ein Hub fasst Filamentspulen und -boxen zusammen – z. B. ein Hub pro Filamentbox. Spulen und Boxen werden anschließend über den Eintrag des Hubs hinzugefügt (Schaltfläche „+ Hinzufügen“).",
+        "data": {
+          "name": "Name des Hubs"
+        }
       }
+    },
+    "error": {
+      "name_required": "Bitte gib einen Namen für den Hub ein."
     }
   },
   "config_subentries": {

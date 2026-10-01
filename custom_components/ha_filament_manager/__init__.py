@@ -1,9 +1,9 @@
 """The Filament Manager integration.
 
-There is exactly one config entry (a singleton hub - see manifest.json's
-"single_config_entry"). Every filament spool and filament box is a config
-subentry of it (see boxes.py and config_flow.py), each still getting its own
-device and entities. A spool's live state (remaining weight) is kept in
+A config entry is a hub (several can exist, e.g. one per filament box).
+Every filament spool and filament box is a config subentry of a hub (see
+boxes.py and config_flow.py), each still getting its own device and
+entities. A spool's live state (remaining weight) is kept in
 ``entry.runtime_data``, keyed by its subentry id, so it can be shared between
 the editable number entity and the read-only percentage sensor without
 re-deriving it from entity state lookups.
@@ -43,7 +43,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Serve the bundled Lovelace overview card and register it with the frontend.
 
     Runs once for the whole integration (unlike async_setup_entry, which runs
-    for the hub entry), so the card is available even before the hub is set up.
+    for each hub entry), so the card is available even before the hub is set up.
     """
     card_path = Path(__file__).parent / "www" / CARD_FILENAME
     await hass.http.async_register_static_paths(

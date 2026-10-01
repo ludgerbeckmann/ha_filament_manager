@@ -56,14 +56,20 @@ und Home Assistant neu starten.
 
 ## Einrichtung
 
-Einmalig über *Einstellungen → Geräte & Dienste → Integration hinzufügen* →
-nach "Filament Manager" suchen und hinzufügen (ohne weitere Eingabe). Danach
-erscheint "Filament Manager" als ein einzelner Eintrag; Spulen und Boxen
-werden über dessen "+ Hinzufügen"-Schaltfläche als Unterobjekte angelegt.
+Über *Einstellungen → Geräte & Dienste → Integration hinzufügen* → nach
+"Filament Manager" suchen und einen **Hub** anlegen. Du vergibst dabei nur
+einen Namen (z. B. "Filamentbox 1"). Spulen und Boxen werden anschließend
+über die "+ Hinzufügen"-Schaltflächen des Hubs als Unterobjekte angelegt.
+
+Du kannst **beliebig viele Hubs** anlegen – etwa einen pro Filamentbox, in dem
+die Box und ihre Spulen zusammen liegen, oder einen für Spulen ohne Box. Eine
+Spule kann nur einer Box **ihres eigenen Hubs** zugeordnet werden. Ist im Hub
+genau eine Box vorhanden, ist sie beim Anlegen einer Spule vorausgewählt. Die
+Dashboard-Karte zeigt die Inhalte aller Hubs gemeinsam an.
 
 ### Spule anlegen
 
-Im Filament-Manager-Eintrag "+ Hinzufügen" → **Filamentspule** wählen:
+Im gewünschten Hub "+ Hinzufügen" → **Filamentspule** wählen:
 
 1. Material (vorbelegt: PETG) und Farbe (beides Dropdowns mit gängigen Werten, aber frei
    überschreibbar) sowie optional Hersteller (ebenfalls Dropdown mit
@@ -96,7 +102,7 @@ sind in `custom_components/ha_filament_manager/const.py`
 ergänzen, sobald reale Werte bekannt sind.
 
 Bestehende Spulen lassen sich über das Zahnrad-Symbol der jeweiligen Spule
-im Filament-Manager-Eintrag bearbeiten (Material, Farbe, Gesamtgewicht,
+in ihrem Hub bearbeiten (Material, Farbe, Gesamtgewicht,
 Filamentbox, Luftfeuchtigkeitssensor usw.). Die Restmenge wird dort bewusst
 nicht verändert – dafür gibt es die `number`-Entität und die Dienste unten.
 
@@ -107,7 +113,7 @@ Eine **Filamentbox** bildet eine physische Trockenbox ab, in die bis zu
 ausgestattet ist. Statt den Sensor mehrfach je Spule zu hinterlegen, wird er
 einmal an der Box konfiguriert:
 
-1. Im Filament-Manager-Eintrag "+ Hinzufügen" → **Filamentbox** wählen.
+1. Im gewünschten Hub "+ Hinzufügen" → **Filamentbox** wählen.
 2. Namen (z. B. "Trockenbox 1") sowie optional Luftfeuchtigkeitssensor,
    Grenzwert und Benachrichtigungseinstellungen hinterlegen (siehe
    "Benachrichtigungen" unten – funktioniert für Boxen genauso wie für

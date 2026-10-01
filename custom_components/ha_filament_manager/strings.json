@@ -2,9 +2,15 @@
   "config": {
     "step": {
       "user": {
-        "title": "Set up Filament Manager",
-        "description": "Filament spools and boxes are added afterwards, from this integration's entry (the \"+ Add\" button)."
+        "title": "Add a Filament Manager hub",
+        "description": "A hub groups filament spools and boxes - e.g. one hub per filament box. Spools and boxes are added afterwards from the hub's entry (the \"+ Add\" button).",
+        "data": {
+          "name": "Hub name"
+        }
       }
+    },
+    "error": {
+      "name_required": "Please enter a name for the hub."
     }
   },
   "config_subentries": {
