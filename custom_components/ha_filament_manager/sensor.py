@@ -18,7 +18,7 @@ from .const import (
     SUBENTRY_TYPE_SPOOL,
     signal_spool_updated,
 )
-from .boxes import spool_subentries
+from .boxes import box_subentry, spool_subentries
 from .entity import box_device_info, spool_device_info
 
 
@@ -28,7 +28,9 @@ async def async_setup_entry(
     """Set up the hub's spool counter and the read-only sensors of every spool."""
     # Always present, so the hub's (box) device exists and shows up on the
     # overview card even without a humidity sensor.
-    async_add_entities([FilamentBoxSpoolCountSensor(entry)])
+    async_add_entities(
+        [FilamentBoxSpoolCountSensor(entry)], config_subentry_id=box_subentry(entry).subentry_id
+    )
 
     for subentry_id, subentry in entry.subentries.items():
         if subentry.subentry_type != SUBENTRY_TYPE_SPOOL:

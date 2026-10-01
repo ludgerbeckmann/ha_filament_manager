@@ -22,12 +22,13 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
+    ConfigSubentryData,
     ConfigSubentryFlow,
     SubentryFlowResult,
 )
 from homeassistant.helpers import selector
 
-from .boxes import spool_subentries
+from .boxes import box_subentry, spool_subentries
 from .const import (
     COLOR_OPTIONS,
     CONF_COLOR,
@@ -50,6 +51,7 @@ from .const import (
     DOMAIN,
     MANUFACTURER_OPTIONS,
     MATERIAL_OPTIONS,
+    SUBENTRY_TYPE_BOX,
     SUBENTRY_TYPE_SPOOL,
     suggested_total_weight,
 )
@@ -242,7 +244,17 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
             if not name:
                 errors["name"] = "name_required"
             else:
-                return self.async_create_entry(title=name, data=user_input)
+                return self.async_create_entry(
+                    title=name,
+                    data=user_input,
+                    # The box subentry (named like the hub) owns the box's
+                    # device and entities, see const.SUBENTRY_TYPE_BOX.
+                    subentries=[
+                        ConfigSubentryData(
+                            data={}, subentry_type=SUBENTRY_TYPE_BOX, title=name, unique_id=None
+                        )
+                    ],
+                )
 
         return self.async_show_form(
             step_id="user", data_schema=vol.Schema(_hub_fields({})), errors=errors
@@ -258,6 +270,8 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
             if not name:
                 errors["name"] = "name_required"
             else:
+                if (box := box_subentry(entry)) is not None:
+                    self.hass.config_entries.async_update_subentry(entry, box, title=name)
                 return self.async_update_and_abort(entry, title=name, data=user_input)
 
         defaults = {CONF_NAME: entry.title, **entry.data}

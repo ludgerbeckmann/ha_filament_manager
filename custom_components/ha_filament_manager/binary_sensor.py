@@ -28,7 +28,7 @@ from .const import (
     SUBENTRY_TYPE_SPOOL,
     signal_spool_updated,
 )
-from .boxes import effective_box_humidity_limits
+from .boxes import box_subentry, effective_box_humidity_limits
 from .entity import box_device_info, spool_device_info
 from .notify_helper import async_handle_alert_transition
 
@@ -50,7 +50,8 @@ async def async_setup_entry(
                     threshold=threshold,
                     delay_minutes=delay,
                 )
-            ]
+            ],
+            config_subentry_id=box_subentry(entry).subentry_id,
         )
 
     for subentry_id, subentry in entry.subentries.items():

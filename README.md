@@ -70,7 +70,12 @@ Manager" suchen. Im Dialog **Filamentbox hinzufügen** legst du fest:
 Du kannst **beliebig viele Hubs** anlegen, z. B. einen pro Filamentbox oder
 ein "Regal" ohne Sensor für lose Spulen. Die Dashboard-Karte zeigt die
 Inhalte aller Hubs gemeinsam an. Die Einstellungen eines Hubs änderst du
-über das Drei-Punkte-Menü des Eintrags → **Neu konfigurieren**.
+über das Drei-Punkte-Menü des Eintrags → **Neu konfigurieren**. Dabei wird
+auch die automatisch angelegte Box umbenannt: Unter jedem Hub steht ein
+Unterobjekt **Filamentbox** mit demselben Namen wie der Hub. Es trägt das
+Gerät und die Entitäten der Box (Luftfeuchtigkeitswarnung, Spulenanzahl) und
+lässt sich nicht separat bearbeiten oder löschen (es wird bei Bedarf neu
+angelegt).
 
 > **Hinweis (ab v0.10.0):** Der Hub *ist* die Filamentbox – es gibt keine
 > separaten Box-Unterobjekte mehr. Hubs, Boxen und Spulen aus älteren

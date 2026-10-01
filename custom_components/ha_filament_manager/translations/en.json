@@ -94,6 +94,17 @@
         "reconfigure_successful": "Reconfiguration successful.",
         "box_full": "This filament box is already full."
       }
+    },
+    "box": {
+      "entry_type": "Filament box",
+      "initiate_flow": {
+        "user": "Add filament box"
+      },
+      "step": {
+        "user": {
+          "title": "Filament box"
+        }
+      }
     }
   },
   "entity": {
