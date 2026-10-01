@@ -25,6 +25,11 @@ CONF_SPOOL_LIMIT: Final = "spool_limit"
 # data holds the box's humidity sensor, limits and notification settings.
 # Every spool is a config subentry of a hub.
 SUBENTRY_TYPE_SPOOL: Final = "spool"
+# Every hub holds exactly one (automatically created) box subentry, named like
+# the hub. It only owns the box's device and entities - which keeps Home
+# Assistant from listing them under "devices without a subentry"; the box's
+# settings live in the hub entry's data.
+SUBENTRY_TYPE_BOX: Final = "box"
 
 DEFAULT_TOTAL_WEIGHT: Final = 1000
 DEFAULT_HUMIDITY_MAX: Final = 40

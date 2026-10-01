@@ -94,6 +94,9 @@
         "reconfigure_successful": "Reconfiguration successful.",
         "box_full": "This filament box is already full."
       }
+    },
+    "box": {
+      "entry_type": "Filament box"
     }
   },
   "entity": {

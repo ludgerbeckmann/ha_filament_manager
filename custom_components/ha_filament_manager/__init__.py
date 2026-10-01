@@ -22,6 +22,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
+from .boxes import box_subentry, new_box_subentry
 from .entity import box_device_info
 from .const import (
     CARD_FILENAME,
@@ -58,16 +59,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the hub (box) entry and every spool subentry it currently holds."""
+    # The box subentry owns the hub's device and entities. Hubs from before it
+    # existed (or one the user removed) get it back here.
+    box = box_subentry(entry)
+    if box is None:
+        box = new_box_subentry(entry.title)
+        hass.config_entries.async_add_subentry(entry, box)
+
     # Create the hub's device up front, so every spool's `via_device` link
     # resolves no matter which platform adds its entities first.
-    box = box_device_info(entry)
-    dr.async_get(hass).async_get_or_create(
+    info = box_device_info(entry)
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers=box["identifiers"],
-        name=box["name"],
-        manufacturer=box["manufacturer"],
-        model=box["model"],
+        config_subentry_id=box.subentry_id,
+        identifiers=info["identifiers"],
+        name=info["name"],
+        manufacturer=info["manufacturer"],
+        model=info["model"],
     )
+    if None in device.config_entries_subentries.get(entry.entry_id, set()):
+        # Registered on the entry itself by an earlier version: move it under the box.
+        dev_reg.async_update_device(
+            device.id, remove_config_entry_id=entry.entry_id, remove_config_subentry_id=None
+        )
 
     entry.runtime_data = {
         subentry_id: SpoolRuntimeData(
@@ -84,7 +99,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the entry whenever a spool subentry is added, edited or removed."""
+    """Reload the entry whenever a spool subentry is added, edited or removed.
+
+    The box subentry is named like its hub, so a rename of the hub (reconfigure
+    or the rename dialog) is mirrored onto it first; that update calls this
+    listener again, which then reloads.
+    """
+    box = box_subentry(entry)
+    if box is not None and box.title != entry.title:
+        hass.config_entries.async_update_subentry(entry, box, title=entry.title)
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 

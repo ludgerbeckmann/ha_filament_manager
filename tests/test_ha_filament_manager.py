@@ -27,6 +27,7 @@ from custom_components.ha_filament_manager.const import (
     DEFAULT_HUMIDITY_DELAY,
     DEFAULT_HUMIDITY_MAX,
     DOMAIN,
+    SUBENTRY_TYPE_BOX,
     SUBENTRY_TYPE_SPOOL,
 )
 
@@ -323,6 +324,97 @@ async def test_hub_flow_rejects_an_empty_name_and_allows_several_hubs(hass: Home
         "Filamentbox 1",
         "Filamentbox 2",
     ]
+
+
+def _box_subentries(entry: MockConfigEntry) -> list[ConfigSubentry]:
+    return [s for s in entry.subentries.values() if s.subentry_type == SUBENTRY_TYPE_BOX]
+
+
+async def test_hub_flow_creates_a_box_subentry_named_like_the_hub(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "Filamentbox 7"})
+    assert result["type"] == "create_entry"
+    await hass.async_block_till_done()
+
+    hub = result["result"]
+    boxes = _box_subentries(hub)
+    assert [box.title for box in boxes] == ["Filamentbox 7"]
+
+
+async def test_box_device_and_entities_belong_to_the_box_subentry(hass: HomeAssistant) -> None:
+    hass.states.async_set("sensor.box_humidity", "30")
+    hub = await _setup_hub(
+        hass, subentries_data=[_spool_subentry()], **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity"}
+    )
+
+    # A hub without its box subentry (e.g. from an earlier version) gets one, named like the hub.
+    (box,) = _box_subentries(hub)
+    assert box.title == HUB_TITLE
+
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, hub.entry_id)})
+    assert device.config_entries_subentries == {hub.entry_id: {box.subentry_id}}
+
+    registry = er.async_get(hass)
+    for entity_id in (SPOOL_COUNT_ENTITY, HUMIDITY_ALERT):
+        assert registry.async_get(entity_id).config_subentry_id == box.subentry_id
+
+    # Spools stay in their own subentries and link to the box's device.
+    spool = _subentry_by_title(hub, "Test Spool")
+    assert registry.async_get(NUMBER_ENTITY).config_subentry_id == spool.subentry_id
+
+
+async def test_legacy_box_device_and_entities_move_under_the_box_subentry(hass: HomeAssistant) -> None:
+    """v0.10.0 registered the hub's device and entities directly on the entry."""
+    hub = MockConfigEntry(domain=DOMAIN, title=HUB_TITLE, subentries_data=[_spool_subentry()])
+    hub.add_to_hass(hass)
+
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    old_device = dev_reg.async_get_or_create(
+        config_entry_id=hub.entry_id, identifiers={(DOMAIN, hub.entry_id)}, name=HUB_TITLE
+    )
+    ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{hub.entry_id}_spool_count", config_entry=hub, device_id=old_device.id
+    )
+    assert dev_reg.async_get(old_device.id).config_entries_subentries == {hub.entry_id: {None}}
+
+    assert await hass.config_entries.async_setup(hub.entry_id)
+    await hass.async_block_till_done()
+
+    (box,) = _box_subentries(hub)
+    device = dev_reg.async_get(old_device.id)  # same device, moved
+    assert device.config_entries_subentries == {hub.entry_id: {box.subentry_id}}
+    entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, f"{hub.entry_id}_spool_count")
+    assert ent_reg.async_get(entity_id).config_subentry_id == box.subentry_id
+
+
+async def test_box_subentry_follows_hub_renames(hass: HomeAssistant) -> None:
+    hub = await _setup_hub(hass)
+
+    # Via "Neu konfigurieren"...
+    result = await hub.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "Renamed Box"})
+    assert result["type"] == "abort"
+    await hass.async_block_till_done()
+    assert [box.title for box in _box_subentries(hub)] == ["Renamed Box"]
+
+    # ...and via the generic rename dialog.
+    hass.config_entries.async_update_entry(hub, title="Renamed Again")
+    await hass.async_block_till_done()
+    assert [box.title for box in _box_subentries(hub)] == ["Renamed Again"]
+    assert hub.state.value == "loaded"
+
+
+async def test_removed_box_subentry_is_recreated(hass: HomeAssistant) -> None:
+    hub = await _setup_hub(hass)
+    (box,) = _box_subentries(hub)
+
+    hass.config_entries.async_remove_subentry(hub, box.subentry_id)
+    await hass.async_block_till_done()
+
+    (new_box,) = _box_subentries(hub)
+    assert new_box.subentry_id != box.subentry_id
+    assert hass.states.get(SPOOL_COUNT_ENTITY) is not None
 
 
 async def test_hub_only_supports_spool_subentries(hass: HomeAssistant) -> None:

@@ -94,6 +94,9 @@
         "reconfigure_successful": "Neukonfiguration erfolgreich.",
         "box_full": "Diese Filamentbox ist bereits voll."
       }
+    },
+    "box": {
+      "entry_type": "Filamentbox"
     }
   },
   "entity": {

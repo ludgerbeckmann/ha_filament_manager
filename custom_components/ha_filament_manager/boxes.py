@@ -1,6 +1,8 @@
 """Helpers for a hub's (= filament box's) spools and humidity limits."""
 from __future__ import annotations
 
+from types import MappingProxyType
+
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 
 from .const import (
@@ -9,10 +11,24 @@ from .const import (
     CONF_MATERIAL,
     DEFAULT_HUMIDITY_DELAY,
     DEFAULT_HUMIDITY_MAX,
+    SUBENTRY_TYPE_BOX,
     SUBENTRY_TYPE_SPOOL,
     suggested_humidity_delay,
     suggested_humidity_max,
 )
+
+
+def box_subentry(entry: ConfigEntry) -> ConfigSubentry | None:
+    """Return the hub's box subentry (the owner of the box's device and entities), if any."""
+    return next(
+        (s for s in entry.subentries.values() if s.subentry_type == SUBENTRY_TYPE_BOX),
+        None,
+    )
+
+
+def new_box_subentry(title: str) -> ConfigSubentry:
+    """Build the box subentry a hub needs, named like the hub."""
+    return ConfigSubentry(data=MappingProxyType({}), subentry_type=SUBENTRY_TYPE_BOX, title=title, unique_id=None)
 
 
 def spool_subentries(entry: ConfigEntry, *, exclude_subentry_id: str | None = None) -> list[ConfigSubentry]:
