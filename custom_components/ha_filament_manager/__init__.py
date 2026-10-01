@@ -1,12 +1,13 @@
 """The Filament Manager integration.
 
-A config entry is a hub (several can exist, e.g. one per filament box).
-Every filament spool and filament box is a config subentry of a hub (see
-boxes.py and config_flow.py), each still getting its own device and
-entities. A spool's live state (remaining weight) is kept in
-``entry.runtime_data``, keyed by its subentry id, so it can be shared between
-the editable number entity and the read-only percentage sensor without
-re-deriving it from entity state lookups.
+A config entry is a hub, and a hub is one filament box (or shelf): its data
+holds the box's humidity sensor, limits and notification settings (see
+config_flow.py). Every filament spool is a config subentry of a hub, each
+getting its own device (linked to the hub's device) and entities. A spool's
+live state (remaining weight) is kept in ``entry.runtime_data``, keyed by
+its subentry id, so it can be shared between the editable number entity and
+the read-only percentage sensor without re-deriving it from entity state
+lookups.
 """
 from __future__ import annotations
 
@@ -18,8 +19,10 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
+from .entity import box_device_info
 from .const import (
     CARD_FILENAME,
     CARD_URL_PATH,
@@ -54,7 +57,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the hub entry and every spool/box subentry it currently holds."""
+    """Set up the hub (box) entry and every spool subentry it currently holds."""
+    # Create the hub's device up front, so every spool's `via_device` link
+    # resolves no matter which platform adds its entities first.
+    box = box_device_info(entry)
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers=box["identifiers"],
+        name=box["name"],
+        manufacturer=box["manufacturer"],
+        model=box["model"],
+    )
+
     entry.runtime_data = {
         subentry_id: SpoolRuntimeData(
             remaining_weight=subentry.data.get(
@@ -70,7 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the entry whenever a spool/box subentry is added, edited or removed."""
+    """Reload the entry whenever a spool subentry is added, edited or removed."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 

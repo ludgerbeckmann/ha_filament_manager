@@ -7,18 +7,23 @@ the underlying condition resolves (on -> off).
 from __future__ import annotations
 
 from homeassistant.components import persistent_notification
-from homeassistant.config_entries import ConfigSubentry
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant, callback
 
 from .const import CONF_NOTIFY_TARGETS, CONF_PERSISTENT_NOTIFICATION, DOMAIN
 
 
-def _notification_id(subentry: ConfigSubentry, kind: str) -> str:
-    return f"{DOMAIN}_{subentry.subentry_id}_{kind}"
+# An alert belongs either to a spool (subentry) or to the hub itself (entry).
+AlertOwner = ConfigSubentry | ConfigEntry
+
+
+def _notification_id(owner: AlertOwner, kind: str) -> str:
+    owner_id = owner.entry_id if isinstance(owner, ConfigEntry) else owner.subentry_id
+    return f"{DOMAIN}_{owner_id}_{kind}"
 
 
 async def async_send_alert(
-    hass: HomeAssistant, subentry: ConfigSubentry, *, kind: str, title: str, message: str
+    hass: HomeAssistant, subentry: AlertOwner, *, kind: str, title: str, message: str
 ) -> None:
     """Push a notification and/or create a persistent notification for an alert."""
     for target in subentry.data.get(CONF_NOTIFY_TARGETS) or []:
@@ -36,7 +41,7 @@ async def async_send_alert(
 
 
 @callback
-def async_dismiss_alert(hass: HomeAssistant, subentry: ConfigSubentry, *, kind: str) -> None:
+def async_dismiss_alert(hass: HomeAssistant, subentry: AlertOwner, *, kind: str) -> None:
     """Dismiss a previously created persistent notification, if any."""
     persistent_notification.async_dismiss(hass, _notification_id(subentry, kind))
 
@@ -44,7 +49,7 @@ def async_dismiss_alert(hass: HomeAssistant, subentry: ConfigSubentry, *, kind: 
 @callback
 def async_handle_alert_transition(
     hass: HomeAssistant,
-    subentry: ConfigSubentry,
+    subentry: AlertOwner,
     *,
     kind: str,
     was_on: bool,

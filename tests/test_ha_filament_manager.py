@@ -1,17 +1,17 @@
+from datetime import timedelta
 from types import MappingProxyType
 
-from datetime import timedelta
-
+from homeassistant.components import persistent_notification as pn
 from homeassistant.config_entries import ConfigSubentry, ConfigSubentryData
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.ha_filament_manager.const import (
     CARD_URL_PATH,
-    CONF_BOX,
     CONF_COLOR,
     CONF_DIAMETER,
     CONF_HUMIDITY_DELAY,
@@ -22,17 +22,21 @@ from custom_components.ha_filament_manager.const import (
     CONF_MATERIAL,
     CONF_NOTIFY_TARGETS,
     CONF_PERSISTENT_NOTIFICATION,
+    CONF_SPOOL_LIMIT,
     CONF_TOTAL_WEIGHT,
+    DEFAULT_HUMIDITY_DELAY,
     DEFAULT_HUMIDITY_MAX,
     DOMAIN,
-    SUBENTRY_TYPE_BOX,
     SUBENTRY_TYPE_SPOOL,
 )
 
+HUB_TITLE = "Test Box"
 NUMBER_ENTITY = "number.test_spool_remaining_weight"
 PERCENT_ENTITY = "sensor.test_spool_remaining"
 MATERIAL_ENTITY = "sensor.test_spool_material"
 COLOR_ENTITY = "sensor.test_spool_color"
+SPOOL_COUNT_ENTITY = "sensor.test_box_spools"
+HUMIDITY_ALERT = "binary_sensor.test_box_humidity_alert"
 
 
 def _spool_data(**overrides):
@@ -52,34 +56,24 @@ def _spool_subentry(title="Test Spool", **overrides) -> ConfigSubentryData:
     )
 
 
-def _box_subentry(title="Dry Box 1", **overrides) -> ConfigSubentryData:
-    return ConfigSubentryData(data=overrides, subentry_type=SUBENTRY_TYPE_BOX, title=title, unique_id=None)
-
-
-async def _setup_hub(hass: HomeAssistant, subentries_data=()) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, title="Filament Manager", subentries_data=subentries_data)
+async def _setup_hub(
+    hass: HomeAssistant, subentries_data=(), title: str = HUB_TITLE, **hub_data
+) -> MockConfigEntry:
+    """Set up a hub (= filament box) with the given settings and spool subentries."""
+    entry = MockConfigEntry(domain=DOMAIN, title=title, data=hub_data, subentries_data=subentries_data)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
 
 
-async def _setup_entry(hass: HomeAssistant, **extra_data) -> MockConfigEntry:
-    """Set up the hub with a single "Test Spool" subentry."""
-    return await _setup_hub(hass, subentries_data=[_spool_subentry(**extra_data)])
+async def _setup_entry(hass: HomeAssistant, **spool_data) -> MockConfigEntry:
+    """Set up a hub with a single "Test Spool" subentry."""
+    return await _setup_hub(hass, subentries_data=[_spool_subentry(**spool_data)])
 
 
 def _subentry_by_title(entry: MockConfigEntry, title: str) -> ConfigSubentry:
     return next(s for s in entry.subentries.values() if s.title == title)
-
-
-def _add_box_subentry(hass: HomeAssistant, entry: MockConfigEntry, title="Dry Box 1", **overrides) -> ConfigSubentry:
-    """Add a filament box subentry directly, bypassing the config flow (fixture setup helper)."""
-    subentry = ConfigSubentry(
-        data=MappingProxyType(overrides), subentry_type=SUBENTRY_TYPE_BOX, title=title, unique_id=None
-    )
-    hass.config_entries.async_add_subentry(entry, subentry)
-    return subentry
 
 
 def _add_spool_subentry(
@@ -96,6 +90,34 @@ def _add_spool_subentry(
     return subentry
 
 
+def _schema_default(schema, key_name: str):
+    for key in schema.schema:
+        if str(key) == key_name:
+            return key.default() if callable(key.default) else key.default
+    raise KeyError(key_name)
+
+
+def _schema_options(schema, key_name: str) -> list[str]:
+    key = next(key for key in schema.schema if str(key) == key_name)
+    return [
+        option if isinstance(option, str) else option["value"]
+        for option in schema.schema[key].config["options"]
+    ]
+
+
+async def _start_spool_flow(hass: HomeAssistant, entry: MockConfigEntry):
+    """Init the spool subentry creation flow."""
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_SPOOL), context={"source": "user"}
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "user"
+    return result
+
+
+# --- spool entities and services -------------------------------------------
+
+
 async def test_setup_creates_expected_entities(hass: HomeAssistant) -> None:
     await _setup_entry(hass)
 
@@ -110,8 +132,8 @@ async def test_setup_creates_expected_entities(hass: HomeAssistant) -> None:
     assert hass.states.get(MATERIAL_ENTITY).state == "PLA"
     assert hass.states.get(COLOR_ENTITY).state == "Black"
 
-    # No humidity sensor configured -> no binary_sensor entity created.
-    assert hass.states.get("binary_sensor.test_spool_humidity_alert") is None
+    # No humidity sensor configured on the hub -> no humidity alert.
+    assert hass.states.get(HUMIDITY_ALERT) is None
 
 
 async def test_consume_and_refill_services_update_percentage(hass: HomeAssistant) -> None:
@@ -144,24 +166,10 @@ async def test_consume_more_than_remaining_clamps_to_zero(hass: HomeAssistant) -
     assert float(hass.states.get(PERCENT_ENTITY).state) == 0.0
 
 
-def _schema_default(schema, key_name: str):
-    for key in schema.schema:
-        if str(key) == key_name:
-            return key.default() if callable(key.default) else key.default
-    raise KeyError(key_name)
+# --- spool flows -------------------------------------------------------------
 
 
-async def _start_spool_flow(hass: HomeAssistant, entry: MockConfigEntry):
-    """Init the spool subentry creation flow."""
-    result = await hass.config_entries.subentries.async_init(
-        (entry.entry_id, SUBENTRY_TYPE_SPOOL), context={"source": "user"}
-    )
-    assert result["type"] == "form"
-    assert result["step_id"] == "user"
-    return result
-
-
-async def test_config_flow_suggests_name_and_creates_entry(hass: HomeAssistant) -> None:
+async def test_spool_flow_suggests_name_and_creates_entry(hass: HomeAssistant) -> None:
     hub = await _setup_hub(hass)
     result = await _start_spool_flow(hass, hub)
 
@@ -189,7 +197,7 @@ async def test_config_flow_suggests_name_and_creates_entry(hass: HomeAssistant) 
     assert hass.states.get("sensor.new_spool_material").state == "PETG"
 
 
-async def test_config_flow_suggests_total_weight_from_material(hass: HomeAssistant) -> None:
+async def test_spool_flow_suggests_total_weight_from_material(hass: HomeAssistant) -> None:
     hub = await _setup_hub(hass)
     result = await _start_spool_flow(hass, hub)
 
@@ -211,41 +219,27 @@ async def test_config_flow_suggests_total_weight_from_material(hass: HomeAssista
     assert _schema_default(result2["data_schema"], CONF_TOTAL_WEIGHT) == 1000
 
 
-async def test_config_flow_defaults_to_petg(hass: HomeAssistant) -> None:
+async def test_spool_flow_defaults_to_petg_and_sorts_dropdowns_alphabetically(hass: HomeAssistant) -> None:
     hub = await _setup_hub(hass)
     result = await _start_spool_flow(hass, hub)
-    assert _schema_default(result["data_schema"], CONF_MATERIAL) == "PETG"
+    schema = result["data_schema"]
+
+    assert _schema_default(schema, CONF_MATERIAL) == "PETG"
+
+    # Alphabetical, with the catch-all entry always last.
+    materials = _schema_options(schema, CONF_MATERIAL)
+    assert materials == ["ABS", "ASA", "HIPS", "Nylon", "PC", "PETG", "PLA", "PVA", "TPU", "Sonstiges"]
+    colors = _schema_options(schema, CONF_COLOR)
+    assert colors[:3] == ["Beige", "Blau", "Braun"]
+    assert colors[-1] == "Sonstige"
+    assert colors[:-1] == sorted(colors[:-1], key=str.casefold)
+    manufacturers = _schema_options(schema, "manufacturer")
+    assert manufacturers[0] == "3DJake"
+    assert manufacturers[-1] == "Sonstiges"
+    assert manufacturers[:-1] == sorted(manufacturers[:-1], key=str.casefold)
 
 
-async def test_config_flow_suggests_humidity_max_from_material(hass: HomeAssistant) -> None:
-    hub = await _setup_hub(hass)
-
-    # Hygroscopic materials get a much stricter threshold than PLA.
-    for material, expected, expected_delay in (
-        ("Nylon", 20, 10),
-        ("TPU", 30, 20),
-        ("PETG", 40, 30),
-        ("PLA", 50, 60),
-    ):
-        result = await _start_spool_flow(hass, hub)
-        result = await hass.config_entries.subentries.async_configure(
-            result["flow_id"],
-            {CONF_MATERIAL: material, CONF_COLOR: "Schwarz", "manufacturer": ""},
-        )
-        assert result["step_id"] == "details"
-        assert _schema_default(result["data_schema"], CONF_HUMIDITY_MAX) == expected
-        assert _schema_default(result["data_schema"], CONF_HUMIDITY_DELAY) == expected_delay
-
-    # Unknown materials fall back to the generic default.
-    result = await _start_spool_flow(hass, hub)
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"],
-        {CONF_MATERIAL: "Sonstiges", CONF_COLOR: "Schwarz", "manufacturer": ""},
-    )
-    assert _schema_default(result["data_schema"], CONF_HUMIDITY_MAX) == DEFAULT_HUMIDITY_MAX
-
-
-async def test_reconfigure_flow_updates_material(hass: HomeAssistant) -> None:
+async def test_spool_reconfigure_flow_updates_material(hass: HomeAssistant) -> None:
     entry = await _setup_entry(hass)
     subentry = _subentry_by_title(entry, "Test Spool")
 
@@ -273,24 +267,131 @@ async def test_reconfigure_flow_updates_material(hass: HomeAssistant) -> None:
     assert hass.states.get(MATERIAL_ENTITY).state == "ABS"
 
 
+async def test_spool_limit_blocks_adding_more_spools(hass: HomeAssistant) -> None:
+    hub = await _setup_hub(
+        hass,
+        subentries_data=[_spool_subentry("Spool 1"), _spool_subentry("Spool 2")],
+        **{CONF_SPOOL_LIMIT: 2},
+    )
+
+    result = await hass.config_entries.subentries.async_init(
+        (hub.entry_id, SUBENTRY_TYPE_SPOOL), context={"source": "user"}
+    )
+    assert result["type"] == "abort"
+    assert result["reason"] == "box_full"
+
+
+async def test_without_spool_limit_any_number_of_spools_fits(hass: HomeAssistant) -> None:
+    hub = await _setup_hub(hass, subentries_data=[_spool_subentry(f"Spool {i}") for i in range(6)])
+    await _start_spool_flow(hass, hub)  # still offers the form
+    assert hass.states.get(SPOOL_COUNT_ENTITY).state == "6"
+
+
+# --- hub (= filament box) flows ---------------------------------------------
+
+
+async def test_hub_flow_creates_a_named_box_with_automatic_limits(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    assert result["type"] == "form"
+    assert result["step_id"] == "user"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"name": "Filamentbox 1", CONF_HUMIDITY_SENSOR: "sensor.box_humidity"}
+    )
+    assert result["type"] == "create_entry"
+    assert result["title"] == "Filamentbox 1"
+    assert result["data"][CONF_HUMIDITY_SENSOR] == "sensor.box_humidity"
+    # Limit, delay and spool limit stay empty: automatic / unlimited.
+    assert CONF_HUMIDITY_MAX not in result["data"]
+    assert CONF_HUMIDITY_DELAY not in result["data"]
+    assert CONF_SPOOL_LIMIT not in result["data"]
+
+
+async def test_hub_flow_rejects_an_empty_name_and_allows_several_hubs(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "  "})
+    assert result["type"] == "form"
+    assert result["errors"] == {"name": "name_required"}
+
+    for name in ("Filamentbox 1", "Filamentbox 2"):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": name})
+        assert result["type"] == "create_entry"
+        await hass.async_block_till_done()
+
+    assert sorted(entry.title for entry in hass.config_entries.async_entries(DOMAIN)) == [
+        "Filamentbox 1",
+        "Filamentbox 2",
+    ]
+
+
+async def test_hub_only_supports_spool_subentries(hass: HomeAssistant) -> None:
+    from custom_components.ha_filament_manager.config_flow import FilamentManagerConfigFlow
+
+    hub = await _setup_hub(hass)
+    assert list(FilamentManagerConfigFlow.async_get_supported_subentry_types(hub)) == [SUBENTRY_TYPE_SPOOL]
+
+
+async def test_hub_reconfigure_updates_settings_and_can_reset_limits(hass: HomeAssistant) -> None:
+    hub = await _setup_hub(
+        hass, **{CONF_HUMIDITY_MAX: 45, CONF_HUMIDITY_DELAY: 5, CONF_SPOOL_LIMIT: 4}
+    )
+
+    result = await hub.start_reconfigure_flow(hass)
+    assert result["type"] == "form"
+    assert result["step_id"] == "reconfigure"
+
+    # Submitting without the optional fields clears them again.
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "Renamed Box"})
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+
+    assert hub.title == "Renamed Box"
+    for key in (CONF_HUMIDITY_MAX, CONF_HUMIDITY_DELAY, CONF_SPOOL_LIMIT):
+        assert key not in hub.data
+
+
+# --- hub device and entities -------------------------------------------------
+
+
+async def test_hub_device_exists_without_a_humidity_sensor_and_links_its_spools(hass: HomeAssistant) -> None:
+    hub = await _setup_entry(hass)
+
+    state = hass.states.get(SPOOL_COUNT_ENTITY)
+    assert state is not None
+    assert state.state == "1"
+    assert state.attributes["spool_limit"] is None
+
+    device_registry = dr.async_get(hass)
+    box_device = device_registry.async_get_device(identifiers={(DOMAIN, hub.entry_id)})
+    assert box_device is not None
+    assert box_device.name == HUB_TITLE
+
+    spool = _subentry_by_title(hub, "Test Spool")
+    spool_device = device_registry.async_get_device(identifiers={(DOMAIN, spool.subentry_id)})
+    assert spool_device is not None
+    assert spool_device.via_device_id == box_device.id
+
+
 async def test_humidity_alert_tracks_source_sensor(hass: HomeAssistant) -> None:
     hass.states.async_set("sensor.dry_box_humidity", "30")
     await hass.async_block_till_done()
 
-    await _setup_entry(
+    await _setup_hub(
         hass,
-        **{CONF_HUMIDITY_SENSOR: "sensor.dry_box_humidity", CONF_HUMIDITY_MAX: 40},
+        subentries_data=[_spool_subentry()],
+        **{CONF_HUMIDITY_SENSOR: "sensor.dry_box_humidity", CONF_HUMIDITY_MAX: 40, CONF_HUMIDITY_DELAY: 0},
     )
 
-    alert_entity = "binary_sensor.test_spool_humidity_alert"
-    state = hass.states.get(alert_entity)
+    state = hass.states.get(HUMIDITY_ALERT)
     assert state is not None
     assert state.state == "off"
 
     hass.states.async_set("sensor.dry_box_humidity", "55")
     await hass.async_block_till_done()
 
-    state = hass.states.get(alert_entity)
+    state = hass.states.get(HUMIDITY_ALERT)
     assert state.state == "on"
     assert state.attributes["current_humidity"] == 55.0
 
@@ -299,22 +400,22 @@ async def test_humidity_alert_delay_ignores_short_spikes(hass: HomeAssistant) ->
     hass.states.async_set("sensor.dry_box_humidity", "30")
     await hass.async_block_till_done()
 
-    await _setup_entry(
+    await _setup_hub(
         hass,
+        subentries_data=[_spool_subentry()],
         **{CONF_HUMIDITY_SENSOR: "sensor.dry_box_humidity", CONF_HUMIDITY_MAX: 40, CONF_HUMIDITY_DELAY: 30},
     )
-    alert_entity = "binary_sensor.test_spool_humidity_alert"
-    assert hass.states.get(alert_entity).state == "off"
+    assert hass.states.get(HUMIDITY_ALERT).state == "off"
 
     # Too humid, but not for long enough yet.
     hass.states.async_set("sensor.dry_box_humidity", "55")
     await hass.async_block_till_done()
-    assert hass.states.get(alert_entity).state == "off"
-    assert hass.states.get(alert_entity).attributes["over_threshold"] is True
+    assert hass.states.get(HUMIDITY_ALERT).state == "off"
+    assert hass.states.get(HUMIDITY_ALERT).attributes["over_threshold"] is True
 
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=29))
     await hass.async_block_till_done()
-    assert hass.states.get(alert_entity).state == "off"
+    assert hass.states.get(HUMIDITY_ALERT).state == "off"
 
     # A dip below the threshold restarts the grace period.
     hass.states.async_set("sensor.dry_box_humidity", "30")
@@ -323,32 +424,95 @@ async def test_humidity_alert_delay_ignores_short_spikes(hass: HomeAssistant) ->
     await hass.async_block_till_done()
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=29))
     await hass.async_block_till_done()
-    assert hass.states.get(alert_entity).state == "off"
+    assert hass.states.get(HUMIDITY_ALERT).state == "off"
 
 
 async def test_humidity_alert_delay_fires_when_sustained(hass: HomeAssistant) -> None:
     hass.states.async_set("sensor.dry_box_humidity", "30")
     await hass.async_block_till_done()
 
-    await _setup_entry(
+    await _setup_hub(
         hass,
+        subentries_data=[_spool_subentry()],
         **{CONF_HUMIDITY_SENSOR: "sensor.dry_box_humidity", CONF_HUMIDITY_MAX: 40, CONF_HUMIDITY_DELAY: 30},
     )
-    alert_entity = "binary_sensor.test_spool_humidity_alert"
 
     hass.states.async_set("sensor.dry_box_humidity", "55")
     await hass.async_block_till_done()
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=31))
     await hass.async_block_till_done()
-    assert hass.states.get(alert_entity).state == "on"
+    assert hass.states.get(HUMIDITY_ALERT).state == "on"
 
     # Staying humid keeps it on; dropping below clears it immediately.
     hass.states.async_set("sensor.dry_box_humidity", "60")
     await hass.async_block_till_done()
-    assert hass.states.get(alert_entity).state == "on"
+    assert hass.states.get(HUMIDITY_ALERT).state == "on"
     hass.states.async_set("sensor.dry_box_humidity", "30")
     await hass.async_block_till_done()
-    assert hass.states.get(alert_entity).state == "off"
+    assert hass.states.get(HUMIDITY_ALERT).state == "off"
+
+
+async def test_hub_limits_follow_most_sensitive_material(hass: HomeAssistant) -> None:
+    hass.states.async_set("sensor.box_humidity", "30")
+    hub = await _setup_hub(hass, **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity"})
+
+    # Empty box: generic defaults.
+    attributes = hass.states.get(HUMIDITY_ALERT).attributes
+    assert attributes["threshold"] == DEFAULT_HUMIDITY_MAX
+    assert attributes["delay_minutes"] == DEFAULT_HUMIDITY_DELAY
+
+    # Nylon (20 %, 10 min) dominates PLA (50 %, 60 min) in the same box.
+    _add_spool_subentry(hass, hub, "PLA Spool", **{CONF_MATERIAL: "PLA"})
+    _add_spool_subentry(hass, hub, "Nylon Spool", **{CONF_MATERIAL: "Nylon"})
+    await hass.async_block_till_done()
+    attributes = hass.states.get(HUMIDITY_ALERT).attributes
+    assert attributes["threshold"] == 20
+    assert attributes["delay_minutes"] == 10
+
+
+async def test_hub_explicit_limits_override_automatic(hass: HomeAssistant) -> None:
+    hass.states.async_set("sensor.box_humidity", "30")
+    await _setup_hub(
+        hass,
+        subentries_data=[_spool_subentry("Nylon Spool", **{CONF_MATERIAL: "Nylon"})],
+        **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity", CONF_HUMIDITY_MAX: 45, CONF_HUMIDITY_DELAY: 5},
+    )
+
+    attributes = hass.states.get(HUMIDITY_ALERT).attributes
+    assert attributes["threshold"] == 45
+    assert attributes["delay_minutes"] == 5
+
+
+async def test_legacy_spool_humidity_entity_is_removed(hass: HomeAssistant) -> None:
+    """Spools no longer monitor humidity on their own - only the hub does."""
+    hass.states.async_set("sensor.old_humidity", "30")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title=HUB_TITLE,
+        subentries_data=[
+            ConfigSubentryData(
+                data=_spool_data(**{CONF_HUMIDITY_SENSOR: "sensor.old_humidity"}),
+                subentry_id="spool1",
+                subentry_type=SUBENTRY_TYPE_SPOOL,
+                title="Test Spool",
+                unique_id=None,
+            )
+        ],
+    )
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    stale = registry.async_get_or_create(
+        "binary_sensor", DOMAIN, "spool1_humidity_alert", config_entry=entry, suggested_object_id="old_alert"
+    )
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert registry.async_get(stale.entity_id) is None
+
+
+# --- low stock and notifications --------------------------------------------
 
 
 async def test_low_stock_alert_not_created_without_threshold(hass: HomeAssistant) -> None:
@@ -374,16 +538,13 @@ async def test_low_stock_alert_tracks_threshold(hass: HomeAssistant) -> None:
     assert state.attributes["remaining_percentage"] == 10.0
 
 
-async def test_alerts_notify_and_dismiss(hass: HomeAssistant) -> None:
+async def test_hub_humidity_alert_notifies_and_dismisses(hass: HomeAssistant) -> None:
     sent_messages = []
 
     async def _fake_send_message(call):
         sent_messages.append(dict(call.data))
 
     hass.services.async_register("notify", "send_message", _fake_send_message)
-
-    from homeassistant.components import persistent_notification as pn
-    from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
     notification_events = []
     async_dispatcher_connect(
@@ -395,11 +556,13 @@ async def test_alerts_notify_and_dismiss(hass: HomeAssistant) -> None:
     hass.states.async_set("sensor.dry_box_humidity", "30")
     await hass.async_block_till_done()
 
-    await _setup_entry(
+    await _setup_hub(
         hass,
+        subentries_data=[_spool_subentry()],
         **{
             CONF_HUMIDITY_SENSOR: "sensor.dry_box_humidity",
             CONF_HUMIDITY_MAX: 40,
+            CONF_HUMIDITY_DELAY: 0,
             CONF_NOTIFY_TARGETS: ["notify.fake_target"],
             CONF_PERSISTENT_NOTIFICATION: True,
         },
@@ -425,6 +588,9 @@ async def test_alerts_notify_and_dismiss(hass: HomeAssistant) -> None:
     assert len(removed) == 1
 
 
+# --- card ---------------------------------------------------------------------
+
+
 async def test_overview_card_is_served_and_registered(hass: HomeAssistant, hass_client) -> None:
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
@@ -441,226 +607,12 @@ async def test_overview_card_is_served_and_registered(hass: HomeAssistant, hass_
     assert "customElements.define(\"filament-manager-card\"" in body
 
 
-async def test_box_creates_humidity_alert(hass: HomeAssistant) -> None:
-    hass.states.async_set("sensor.box_humidity", "30")
-    await hass.async_block_till_done()
+async def test_hubs_are_independent(hass: HomeAssistant) -> None:
+    hub_a = await _setup_hub(hass, subentries_data=[_spool_subentry()])
+    hub_b = await _setup_hub(hass, title="Other Box", subentries_data=[_spool_subentry("Other Spool")])
 
-    entry = await _setup_hub(
-        hass,
-        subentries_data=[
-            _box_subentry(
-                **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity", CONF_HUMIDITY_MAX: 40, CONF_HUMIDITY_DELAY: 0}
-            )
-        ],
-    )
-
-    alert_entity = "binary_sensor.dry_box_1_humidity_alert"
-    assert hass.states.get(alert_entity).state == "off"
-
-    hass.states.async_set("sensor.box_humidity", "55")
-    await hass.async_block_till_done()
-    assert hass.states.get(alert_entity).state == "on"
-
-    # A box has no remaining weight, material or color - only its shared
-    # humidity alert.
-    assert hass.states.get("number.dry_box_1_remaining_weight") is None
-    box = _subentry_by_title(entry, "Dry Box 1")
-    assert box.subentry_type == SUBENTRY_TYPE_BOX
-
-
-async def test_box_limits_follow_most_sensitive_material(hass: HomeAssistant) -> None:
-    hass.states.async_set("sensor.box_humidity", "30")
-    entry = await _setup_hub(hass)
-    box = _add_box_subentry(hass, entry, **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity"})
-    await hass.async_block_till_done()
-    alert = "binary_sensor.dry_box_1_humidity_alert"
-
-    # Empty box: generic defaults (40 %, 30 min).
-    assert hass.states.get(alert).attributes["threshold"] == 40
-    assert hass.states.get(alert).attributes["delay_minutes"] == 30
-
-    # Nylon (20 %, 10 min) dominates PLA (50 %, 60 min) in the same box.
-    _add_spool_subentry(hass, entry, "PLA Spool", **{CONF_MATERIAL: "PLA", CONF_BOX: box.subentry_id})
-    _add_spool_subentry(hass, entry, "Nylon Spool", **{CONF_MATERIAL: "Nylon", CONF_BOX: box.subentry_id})
-    await hass.async_block_till_done()
-    assert hass.states.get(alert).attributes["threshold"] == 20
-    assert hass.states.get(alert).attributes["delay_minutes"] == 10
-
-
-async def test_hub_flow_asks_for_a_name_and_allows_several_hubs(hass: HomeAssistant) -> None:
-    for name in ("Filamentbox 1", "Filamentbox 2"):
-        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-        assert result["type"] == "form"
-        assert result["step_id"] == "user"
-        assert _schema_default(result["data_schema"], "name") == "Filament Manager"
-
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": name})
-        assert result["type"] == "create_entry"
-        assert result["title"] == name
-        await hass.async_block_till_done()
-
-    assert sorted(entry.title for entry in hass.config_entries.async_entries(DOMAIN)) == [
-        "Filamentbox 1",
-        "Filamentbox 2",
-    ]
-
-    # An empty name is rejected.
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "  "})
-    assert result["type"] == "form"
-    assert result["errors"] == {"name": "name_required"}
-
-
-async def test_hubs_are_independent_and_boxes_stay_within_their_hub(hass: HomeAssistant) -> None:
-    hub_a = await _setup_hub(
-        hass,
-        subentries_data=[_box_subentry("Box A"), _spool_subentry(name="unused")],
-    )
-    hub_b = MockConfigEntry(
-        domain=DOMAIN, title="Hub B", subentries_data=[_box_subentry("Box B")]
-    )
-    hub_b.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(hub_b.entry_id)
-    await hass.async_block_till_done()
-
-    # Both hubs are loaded side by side, each with its own entities.
     assert hub_a.state.value == "loaded"
     assert hub_b.state.value == "loaded"
-    assert hass.states.get(NUMBER_ENTITY) is not None
-
-    # A spool added in hub A only offers (and, as the only one, preselects)
-    # hub A's box - never hub B's.
-    box_a = _subentry_by_title(hub_a, "Box A")
-    result = await _start_spool_flow(hass, hub_a)
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"],
-        {CONF_MATERIAL: "PETG", CONF_COLOR: "Rot", "manufacturer": ""},
-    )
-    assert result["step_id"] == "details"
-    assert _schema_default(result["data_schema"], CONF_BOX) == box_a.subentry_id
-    box_field = next(key for key in result["data_schema"].schema if key == CONF_BOX)
-    options = result["data_schema"].schema[box_field].config["options"]
-    assert [option["value"] for option in options] == [box_a.subentry_id]
-
-
-async def test_box_flow_leaves_limits_automatic_and_can_reset_them(hass: HomeAssistant) -> None:
-    hub = await _setup_hub(hass)
-
-    result = await hass.config_entries.subentries.async_init(
-        (hub.entry_id, SUBENTRY_TYPE_BOX), context={"source": "user"}
-    )
-    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"name": "Box A"})
-    assert result["type"] == "create_entry"
-    assert CONF_HUMIDITY_MAX not in result["data"]
-    assert CONF_HUMIDITY_DELAY not in result["data"]
-    await hass.async_block_till_done()
-
-    box = _subentry_by_title(hub, "Box A")
-    hass.config_entries.async_update_subentry(
-        hub, box, data={CONF_HUMIDITY_MAX: 45, CONF_HUMIDITY_DELAY: 5}
-    )
-    await hass.async_block_till_done()
-
-    # Reconfigure: submitting without the two fields clears them again.
-    result = await hass.config_entries.subentries.async_init(
-        (hub.entry_id, SUBENTRY_TYPE_BOX), context={"source": "reconfigure", "subentry_id": box.subentry_id}
-    )
-    assert result["step_id"] == "reconfigure"
-    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"name": "Box A"})
-    assert result["type"] == "abort"
-    assert CONF_HUMIDITY_MAX not in _subentry_by_title(hub, "Box A").data
-
-
-async def test_box_explicit_limits_override_automatic(hass: HomeAssistant) -> None:
-    hass.states.async_set("sensor.box_humidity", "30")
-    entry = await _setup_hub(hass)
-    box = _add_box_subentry(
-        hass,
-        entry,
-        **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity", CONF_HUMIDITY_MAX: 45, CONF_HUMIDITY_DELAY: 5},
-    )
-    _add_spool_subentry(hass, entry, "Nylon Spool", **{CONF_MATERIAL: "Nylon", CONF_BOX: box.subentry_id})
-    await hass.async_block_till_done()
-
-    attributes = hass.states.get("binary_sensor.dry_box_1_humidity_alert").attributes
-    assert attributes["threshold"] == 45
-    assert attributes["delay_minutes"] == 5
-
-
-async def test_spool_in_box_uses_box_humidity_not_its_own(hass: HomeAssistant) -> None:
-    entry = await _setup_hub(hass)
-    box = _add_box_subentry(hass, entry, **{CONF_HUMIDITY_SENSOR: "sensor.box_humidity"})
-    await hass.async_block_till_done()
-
-    hass.states.async_set("sensor.spool_own_humidity", "10")
-    await hass.async_block_till_done()
-
-    spool = _add_spool_subentry(
-        hass,
-        entry,
-        **{
-            CONF_BOX: box.subentry_id,
-            CONF_HUMIDITY_SENSOR: "sensor.spool_own_humidity",
-            CONF_HUMIDITY_MAX: 40,
-        },
-    )
-    await hass.async_block_till_done()
-
-    # The box overrides a spool's own humidity sensor once assigned to it.
-    assert hass.states.get("binary_sensor.test_spool_humidity_alert") is None
-
-    device_registry = dr.async_get(hass)
-    spool_device = device_registry.async_get_device(identifiers={(DOMAIN, spool.subentry_id)})
-    box_device = device_registry.async_get_device(identifiers={(DOMAIN, box.subentry_id)})
-    assert spool_device is not None
-    assert box_device is not None
-    assert spool_device.via_device_id == box_device.id
-
-
-async def test_assigning_a_box_removes_the_spools_own_stale_humidity_entity(hass: HomeAssistant) -> None:
-    """A spool's own humidity alert must not linger as a stale registry entry.
-
-    Otherwise it would keep showing up (as an "unavailable" ghost) on the
-    overview card even though the box now owns humidity monitoring for it.
-    """
-    hass.states.async_set("sensor.spool_own_humidity", "10")
-    await hass.async_block_till_done()
-
-    entry = await _setup_entry(hass, **{CONF_HUMIDITY_SENSOR: "sensor.spool_own_humidity"})
-    spool = _subentry_by_title(entry, "Test Spool")
-
-    registry = er.async_get(hass)
-    alert_entity = "binary_sensor.test_spool_humidity_alert"
-    assert registry.async_get(alert_entity) is not None
-
-    box = _add_box_subentry(hass, entry)
-    await hass.async_block_till_done()
-
-    hass.config_entries.async_update_subentry(entry, spool, data={**spool.data, CONF_BOX: box.subentry_id})
-    await hass.async_block_till_done()
-
-    assert registry.async_get(alert_entity) is None
-    assert hass.states.get(alert_entity) is None
-
-
-async def test_box_full_rejects_a_fifth_spool(hass: HomeAssistant) -> None:
-    entry = await _setup_hub(hass)
-    box = _add_box_subentry(hass, entry)
-    await hass.async_block_till_done()
-
-    for i in range(4):
-        _add_spool_subentry(hass, entry, title=f"Spool {i}", **{CONF_BOX: box.subentry_id})
-    await hass.async_block_till_done()
-
-    result = await _start_spool_flow(hass, entry)
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"],
-        {CONF_MATERIAL: "PLA", CONF_COLOR: "Schwarz", "manufacturer": ""},
-    )
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"],
-        {CONF_DIAMETER: "1.75", CONF_TOTAL_WEIGHT: 1000, CONF_BOX: box.subentry_id},
-    )
-    assert result["type"] == "form"
-    assert result["step_id"] == "details"
-    assert result["errors"]["base"] == "box_full"
+    assert hass.states.get(SPOOL_COUNT_ENTITY).state == "1"
+    assert hass.states.get("sensor.other_box_spools").state == "1"
+    assert hass.states.get("number.other_spool_remaining_weight") is not None

@@ -13,28 +13,49 @@ from .const import (
     CONF_DIAMETER,
     CONF_MANUFACTURER,
     CONF_MATERIAL,
+    CONF_SPOOL_LIMIT,
     CONF_TOTAL_WEIGHT,
     SUBENTRY_TYPE_SPOOL,
     signal_spool_updated,
 )
-from .entity import spool_device_info
+from .boxes import spool_subentries
+from .entity import box_device_info, spool_device_info
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up the read-only sensors for every spool."""
+    """Set up the hub's spool counter and the read-only sensors of every spool."""
+    # Always present, so the hub's (box) device exists and shows up on the
+    # overview card even without a humidity sensor.
+    async_add_entities([FilamentBoxSpoolCountSensor(entry)])
+
     for subentry_id, subentry in entry.subentries.items():
         if subentry.subentry_type != SUBENTRY_TYPE_SPOOL:
             continue
         async_add_entities(
             [
                 FilamentRemainingPercentageSensor(entry, subentry),
-                FilamentMaterialSensor(subentry),
-                FilamentColorSensor(subentry),
+                FilamentMaterialSensor(entry, subentry),
+                FilamentColorSensor(entry, subentry),
             ],
             config_subentry_id=subentry_id,
         )
+
+
+class FilamentBoxSpoolCountSensor(SensorEntity):
+    """How many spools are stored in this hub (filament box)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "spool_count"
+    _attr_icon = "mdi:tray-full"
+    _attr_should_poll = False
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        self._attr_unique_id = f"{entry.entry_id}_spool_count"
+        self._attr_device_info = box_device_info(entry)
+        self._attr_native_value = len(spool_subentries(entry))
+        self._attr_extra_state_attributes = {"spool_limit": entry.data.get(CONF_SPOOL_LIMIT)}
 
 
 class FilamentRemainingPercentageSensor(SensorEntity):
@@ -51,7 +72,7 @@ class FilamentRemainingPercentageSensor(SensorEntity):
         self._entry = entry
         self._subentry = subentry
         self._attr_unique_id = f"{subentry.subentry_id}_remaining_percentage"
-        self._attr_device_info = spool_device_info(subentry)
+        self._attr_device_info = spool_device_info(entry, subentry)
 
     async def async_added_to_hass(self) -> None:
         """Recompute whenever the spool's remaining weight changes."""
@@ -82,9 +103,9 @@ class FilamentMaterialSensor(SensorEntity):
     _attr_translation_key = "material"
     _attr_icon = "mdi:flask-outline"
 
-    def __init__(self, subentry: ConfigSubentry) -> None:
+    def __init__(self, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         self._attr_unique_id = f"{subentry.subentry_id}_material"
-        self._attr_device_info = spool_device_info(subentry)
+        self._attr_device_info = spool_device_info(entry, subentry)
         self._attr_native_value = subentry.data.get(CONF_MATERIAL)
         self._attr_extra_state_attributes = {
             "diameter_mm": subentry.data.get(CONF_DIAMETER),
@@ -100,7 +121,7 @@ class FilamentColorSensor(SensorEntity):
     _attr_translation_key = "color"
     _attr_icon = "mdi:palette"
 
-    def __init__(self, subentry: ConfigSubentry) -> None:
+    def __init__(self, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         self._attr_unique_id = f"{subentry.subentry_id}_color"
-        self._attr_device_info = spool_device_info(subentry)
+        self._attr_device_info = spool_device_info(entry, subentry)
         self._attr_native_value = subentry.data.get(CONF_COLOR)
