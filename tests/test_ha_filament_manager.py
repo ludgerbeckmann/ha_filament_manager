@@ -397,6 +397,30 @@ async def test_box_title_sorts_before_the_spools(hass: HomeAssistant) -> None:
     assert not BOX_TITLE_PREFIX[0].isalnum()
 
 
+async def test_box_title_prefix_is_always_present_and_never_doubled() -> None:
+    assert box_title("Filamentbox 3") == "# Filamentbox 3"
+    assert box_title("  Filamentbox 3  ") == "# Filamentbox 3"
+    assert box_title("# Filamentbox 3") == "# Filamentbox 3"
+
+
+async def test_removed_prefix_is_restored(hass: HomeAssistant) -> None:
+    """If the "# " is removed from the box's title (by mistake or on purpose), it comes back."""
+    hub = await _setup_hub(hass)
+    (box,) = _box_subentries(hub)
+    assert box.title == f"# {HUB_TITLE}"
+
+    hass.config_entries.async_update_subentry(hub, box, title=HUB_TITLE)
+    await hass.async_block_till_done()
+    assert [b.title for b in _box_subentries(hub)] == [f"# {HUB_TITLE}"]
+
+    # Also when the box is given a completely different name.
+    (box,) = _box_subentries(hub)
+    hass.config_entries.async_update_subentry(hub, box, title="Something else")
+    await hass.async_block_till_done()
+    assert [b.title for b in _box_subentries(hub)] == [f"# {HUB_TITLE}"]
+    assert hub.state.value == "loaded"
+
+
 async def test_box_subentry_from_an_earlier_version_is_renamed(hass: HomeAssistant) -> None:
     """v0.10.1 named the box exactly like its hub (no sort-first symbol)."""
     hub = MockConfigEntry(

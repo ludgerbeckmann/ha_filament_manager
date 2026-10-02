@@ -66,7 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         box = new_box_subentry(entry.title)
         hass.config_entries.async_add_subentry(entry, box)
     elif box.title != box_title(entry.title):
-        # Named by an earlier version (no sort-first symbol): rename it.
+        # Missing or changed "# " prefix (earlier version, or edited): restore it.
         hass.config_entries.async_update_subentry(entry, box, title=box_title(entry.title))
 
     # Create the hub's device up front, so every spool's `via_device` link

@@ -28,8 +28,13 @@ def box_subentry(entry: ConfigEntry) -> ConfigSubentry | None:
 
 
 def box_title(hub_title: str) -> str:
-    """Return the title of a hub's box subentry: the hub's name behind a sort-first symbol."""
-    return f"{BOX_TITLE_PREFIX}{hub_title}"
+    """Return the title of a hub's box subentry: the hub's name behind a sort-first "# ".
+
+    The prefix is always present, whatever the hub's name: it is added when
+    missing and never doubled.
+    """
+    name = hub_title.strip()
+    return name if name.startswith(BOX_TITLE_PREFIX) else f"{BOX_TITLE_PREFIX}{name}"
 
 
 def new_box_subentry(hub_title: str) -> ConfigSubentry:
