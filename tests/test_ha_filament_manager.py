@@ -10,7 +10,9 @@ from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
+from custom_components.ha_filament_manager.boxes import box_title
 from custom_components.ha_filament_manager.const import (
+    BOX_TITLE_PREFIX,
     CARD_URL_PATH,
     CONF_COLOR,
     CONF_DIAMETER,
@@ -338,7 +340,7 @@ async def test_hub_flow_creates_a_box_subentry_named_like_the_hub(hass: HomeAssi
 
     hub = result["result"]
     boxes = _box_subentries(hub)
-    assert [box.title for box in boxes] == ["Filamentbox 7"]
+    assert [box.title for box in boxes] == [box_title("Filamentbox 7")]
 
 
 async def test_box_device_and_entities_belong_to_the_box_subentry(hass: HomeAssistant) -> None:
@@ -349,7 +351,7 @@ async def test_box_device_and_entities_belong_to_the_box_subentry(hass: HomeAssi
 
     # A hub without its box subentry (e.g. from an earlier version) gets one, named like the hub.
     (box,) = _box_subentries(hub)
-    assert box.title == HUB_TITLE
+    assert box.title == box_title(HUB_TITLE)
 
     device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, hub.entry_id), hub.entry_id)
     assert device.config_entries_subentries == {hub.entry_id: {box.subentry_id}}
@@ -388,6 +390,57 @@ async def test_legacy_box_device_and_entities_move_under_the_box_subentry(hass: 
     assert ent_reg.async_get(entity_id).config_subentry_id == box.subentry_id
 
 
+async def test_box_title_sorts_before_the_spools(hass: HomeAssistant) -> None:
+    """HA lists a hub's subentries sorted by title: a leading symbol keeps the box on top."""
+    assert box_title("Filamentbox 3") == f"{BOX_TITLE_PREFIX}Filamentbox 3"
+    # Letters and digits sort after any non-alphanumeric first character.
+    assert not BOX_TITLE_PREFIX[0].isalnum()
+
+
+async def test_box_title_prefix_is_always_present_and_never_doubled() -> None:
+    assert box_title("Filamentbox 3") == "# Filamentbox 3"
+    assert box_title("  Filamentbox 3  ") == "# Filamentbox 3"
+    assert box_title("# Filamentbox 3") == "# Filamentbox 3"
+
+
+async def test_removed_prefix_is_restored(hass: HomeAssistant) -> None:
+    """If the "# " is removed from the box's title (by mistake or on purpose), it comes back."""
+    hub = await _setup_hub(hass)
+    (box,) = _box_subentries(hub)
+    assert box.title == f"# {HUB_TITLE}"
+
+    hass.config_entries.async_update_subentry(hub, box, title=HUB_TITLE)
+    await hass.async_block_till_done()
+    assert [b.title for b in _box_subentries(hub)] == [f"# {HUB_TITLE}"]
+
+    # Also when the box is given a completely different name.
+    (box,) = _box_subentries(hub)
+    hass.config_entries.async_update_subentry(hub, box, title="Something else")
+    await hass.async_block_till_done()
+    assert [b.title for b in _box_subentries(hub)] == [f"# {HUB_TITLE}"]
+    assert hub.state.value == "loaded"
+
+
+async def test_box_subentry_from_an_earlier_version_is_renamed(hass: HomeAssistant) -> None:
+    """v0.10.1 named the box exactly like its hub (no sort-first symbol)."""
+    hub = MockConfigEntry(
+        domain=DOMAIN,
+        title=HUB_TITLE,
+        subentries_data=[
+            ConfigSubentryData(
+                data={}, subentry_type=SUBENTRY_TYPE_BOX, title=HUB_TITLE, unique_id=None
+            ),
+            _spool_subentry(),
+        ],
+    )
+    hub.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(hub.entry_id)
+    await hass.async_block_till_done()
+
+    assert [box.title for box in _box_subentries(hub)] == [box_title(HUB_TITLE)]
+    assert hub.state.value == "loaded"
+
+
 async def test_box_subentry_follows_hub_renames(hass: HomeAssistant) -> None:
     hub = await _setup_hub(hass)
 
@@ -396,12 +449,12 @@ async def test_box_subentry_follows_hub_renames(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "Renamed Box"})
     assert result["type"] == "abort"
     await hass.async_block_till_done()
-    assert [box.title for box in _box_subentries(hub)] == ["Renamed Box"]
+    assert [box.title for box in _box_subentries(hub)] == [box_title("Renamed Box")]
 
     # ...and via the generic rename dialog.
     hass.config_entries.async_update_entry(hub, title="Renamed Again")
     await hass.async_block_till_done()
-    assert [box.title for box in _box_subentries(hub)] == ["Renamed Again"]
+    assert [box.title for box in _box_subentries(hub)] == [box_title("Renamed Again")]
     assert hub.state.value == "loaded"
 
 

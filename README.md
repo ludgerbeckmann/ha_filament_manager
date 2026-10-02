@@ -72,7 +72,11 @@ ein "Regal" ohne Sensor für lose Spulen. Die Dashboard-Karte zeigt die
 Inhalte aller Hubs gemeinsam an. Die Einstellungen eines Hubs änderst du
 über das Drei-Punkte-Menü des Eintrags → **Neu konfigurieren**. Dabei wird
 auch die automatisch angelegte Box umbenannt: Unter jedem Hub steht ein
-Unterobjekt **Filamentbox** mit demselben Namen wie der Hub. Es trägt das
+Unterobjekt **Filamentbox** mit dem Namen des Hubs, dem eine Raute mit
+Leerzeichen vorangestellt ist ("# Filamentbox 3"). Home Assistant sortiert
+Unterobjekte alphabetisch; so steht die Box ganz oben, vor den Spulen. Die
+Raute wird automatisch wieder ergänzt, falls sie fehlt – der Name der Box
+folgt immer dem des Hubs. Es trägt das
 Gerät und die Entitäten der Box (Luftfeuchtigkeitswarnung, Spulenanzahl) und
 lässt sich nicht separat bearbeiten oder löschen (es wird bei Bedarf neu
 angelegt).
