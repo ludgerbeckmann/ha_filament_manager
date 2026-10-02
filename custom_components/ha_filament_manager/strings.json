@@ -1,5 +1,8 @@
 {
   "config": {
+    "initiate_flow": {
+      "user": "Add filament box"
+    },
     "step": {
       "user": {
         "title": "Add a filament box",

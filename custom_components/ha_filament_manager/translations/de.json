@@ -1,5 +1,8 @@
 {
   "config": {
+    "initiate_flow": {
+      "user": "Filamentbox hinzufügen"
+    },
     "step": {
       "user": {
         "title": "Filamentbox hinzufügen",
