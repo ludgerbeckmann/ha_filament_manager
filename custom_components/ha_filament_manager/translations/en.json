@@ -13,7 +13,7 @@
           "humidity_max": "Maximum humidity (empty = automatic)",
           "humidity_delay": "Alert only after (minutes, empty = automatic)",
           "notify_targets": "Notify (optional)",
-          "persistent_notification": "Also show a persistent notification",
+          "persistent_notification": "Show a persistent notification",
           "spool_limit": "Maximum number of spools (empty = unlimited)"
         }
       },
@@ -26,7 +26,7 @@
           "humidity_max": "Maximum humidity (empty = automatic)",
           "humidity_delay": "Alert only after (minutes, empty = automatic)",
           "notify_targets": "Notify (optional)",
-          "persistent_notification": "Also show a persistent notification",
+          "persistent_notification": "Show a persistent notification",
           "spool_limit": "Maximum number of spools (empty = unlimited)"
         }
       }
@@ -63,7 +63,7 @@
             "initial_remaining_weight": "Current remaining weight",
             "low_stock_threshold": "Low stock warning below (optional, e.g. 15)",
             "notify_targets": "Notify (optional)",
-            "persistent_notification": "Also show a persistent notification"
+            "persistent_notification": "Show a persistent notification"
           }
         },
         "name": {
@@ -85,7 +85,7 @@
             "total_weight": "Total weight (new spool)",
             "low_stock_threshold": "Low stock warning below (optional, e.g. 15)",
             "notify_targets": "Notify (optional)",
-            "persistent_notification": "Also show a persistent notification"
+            "persistent_notification": "Show a persistent notification"
           }
         }
       },
