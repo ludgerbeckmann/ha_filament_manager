@@ -351,7 +351,7 @@ async def test_box_device_and_entities_belong_to_the_box_subentry(hass: HomeAssi
     (box,) = _box_subentries(hub)
     assert box.title == HUB_TITLE
 
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, hub.entry_id)})
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, hub.entry_id), hub.entry_id)
     assert device.config_entries_subentries == {hub.entry_id: {box.subentry_id}}
 
     registry = er.async_get(hass)
@@ -456,12 +456,12 @@ async def test_hub_device_exists_without_a_humidity_sensor_and_links_its_spools(
     assert state.attributes["spool_limit"] is None
 
     device_registry = dr.async_get(hass)
-    box_device = device_registry.async_get_device(identifiers={(DOMAIN, hub.entry_id)})
+    box_device = device_registry.async_get_device_by_identifier((DOMAIN, hub.entry_id), hub.entry_id)
     assert box_device is not None
     assert box_device.name == HUB_TITLE
 
     spool = _subentry_by_title(hub, "Test Spool")
-    spool_device = device_registry.async_get_device(identifiers={(DOMAIN, spool.subentry_id)})
+    spool_device = device_registry.async_get_device_by_identifier((DOMAIN, spool.subentry_id), hub.entry_id)
     assert spool_device is not None
     assert spool_device.via_device_id == box_device.id
 
