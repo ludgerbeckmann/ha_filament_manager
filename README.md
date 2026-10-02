@@ -63,7 +63,7 @@ Manager" suchen. Im Dialog **Filamentbox hinzufügen** legst du fest:
 - optional einen **Luftfeuchtigkeitssensor** der Box,
 - optional **Grenzwert** und **Verzögerung** der Luftfeuchtigkeitswarnung –
   leer lassen für die Automatik nach dem empfindlichsten Material in der Box,
-- optional **Notify-Ziele** und ob zusätzlich eine dauerhafte
+- optional **Notify-Ziele** und ob eine dauerhafte
   Benachrichtigung angezeigt werden soll (siehe "Benachrichtigungen"),
 - optional die **maximale Spulenanzahl** – leer lassen für keine Begrenzung.
 
@@ -100,7 +100,7 @@ Filamentbox ihres Hubs:
    einer hinterlegt ist, sonst mit einem branchenüblichen Standardwert (z. B.
    500 g für TPU/PVA, sonst 1000 g) – in jedem Fall frei überschreibbar.
 3. Optional einen Schwellwert für die Bestandswarnung (z. B. 15 %) sowie ein
-   oder mehrere Notify-Ziele und ob zusätzlich eine dauerhafte
+   oder mehrere Notify-Ziele und ob eine dauerhafte
    Benachrichtigung angezeigt werden soll (siehe "Benachrichtigungen").
 4. Im letzten Schritt einen Namen vergeben – vorbelegt mit einem Vorschlag
    aus Hersteller, Material und Farbe (z. B. "Prusament PETG Rot"), kann
@@ -197,7 +197,7 @@ auf "an" wechselt (keine eigene Automation nötig):
 
 - **Push-Benachrichtigung**: ein oder mehrere Notify-Ziele auswählbar (z. B.
   `notify.mobile_app_dein_handy`).
-- **Dauerhafte Benachrichtigung**: zusätzlich als Karte im Dashboard
+- **Dauerhafte Benachrichtigung**: als Karte im Dashboard
   (*Einstellungen → Benachrichtigungen*), wird automatisch wieder entfernt,
   sobald der Warnzustand endet (z. B. Luftfeuchtigkeit wieder unter dem
   Grenzwert, oder Spule aufgefüllt).

@@ -13,7 +13,7 @@
           "humidity_max": "Maximale Luftfeuchtigkeit (leer = automatisch)",
           "humidity_delay": "Warnung erst nach (Minuten, leer = automatisch)",
           "notify_targets": "Benachrichtigen (optional)",
-          "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen",
+          "persistent_notification": "Dauerhafte Benachrichtigung anzeigen",
           "spool_limit": "Maximale Spulenanzahl (leer = unbegrenzt)"
         }
       },
@@ -26,7 +26,7 @@
           "humidity_max": "Maximale Luftfeuchtigkeit (leer = automatisch)",
           "humidity_delay": "Warnung erst nach (Minuten, leer = automatisch)",
           "notify_targets": "Benachrichtigen (optional)",
-          "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen",
+          "persistent_notification": "Dauerhafte Benachrichtigung anzeigen",
           "spool_limit": "Maximale Spulenanzahl (leer = unbegrenzt)"
         }
       }
@@ -63,7 +63,7 @@
             "initial_remaining_weight": "Aktuelle Restmenge",
             "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
             "notify_targets": "Benachrichtigen (optional)",
-            "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
+            "persistent_notification": "Dauerhafte Benachrichtigung anzeigen"
           }
         },
         "name": {
@@ -85,7 +85,7 @@
             "total_weight": "Gesamtgewicht (neue Spule)",
             "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
             "notify_targets": "Benachrichtigen (optional)",
-            "persistent_notification": "Zusätzlich dauerhafte Benachrichtigung anzeigen"
+            "persistent_notification": "Dauerhafte Benachrichtigung anzeigen"
           }
         }
       },
