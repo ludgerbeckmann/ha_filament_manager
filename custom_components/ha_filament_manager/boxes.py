@@ -6,6 +6,7 @@ from types import MappingProxyType
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 
 from .const import (
+    BOX_TITLE_PREFIX,
     CONF_HUMIDITY_DELAY,
     CONF_HUMIDITY_MAX,
     CONF_MATERIAL,
@@ -26,9 +27,19 @@ def box_subentry(entry: ConfigEntry) -> ConfigSubentry | None:
     )
 
 
-def new_box_subentry(title: str) -> ConfigSubentry:
+def box_title(hub_title: str) -> str:
+    """Return the title of a hub's box subentry: the hub's name behind a sort-first symbol."""
+    return f"{BOX_TITLE_PREFIX}{hub_title}"
+
+
+def new_box_subentry(hub_title: str) -> ConfigSubentry:
     """Build the box subentry a hub needs, named like the hub."""
-    return ConfigSubentry(data=MappingProxyType({}), subentry_type=SUBENTRY_TYPE_BOX, title=title, unique_id=None)
+    return ConfigSubentry(
+        data=MappingProxyType({}),
+        subentry_type=SUBENTRY_TYPE_BOX,
+        title=box_title(hub_title),
+        unique_id=None,
+    )
 
 
 def spool_subentries(entry: ConfigEntry, *, exclude_subentry_id: str | None = None) -> list[ConfigSubentry]:

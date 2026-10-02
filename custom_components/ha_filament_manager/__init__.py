@@ -22,7 +22,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
-from .boxes import box_subentry, new_box_subentry
+from .boxes import box_subentry, box_title, new_box_subentry
 from .entity import box_device_info
 from .const import (
     CARD_FILENAME,
@@ -65,6 +65,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if box is None:
         box = new_box_subentry(entry.title)
         hass.config_entries.async_add_subentry(entry, box)
+    elif box.title != box_title(entry.title):
+        # Named by an earlier version (no sort-first symbol): rename it.
+        hass.config_entries.async_update_subentry(entry, box, title=box_title(entry.title))
 
     # Create the hub's device up front, so every spool's `via_device` link
     # resolves no matter which platform adds its entities first.
@@ -101,13 +104,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the entry whenever a spool subentry is added, edited or removed.
 
-    The box subentry is named like its hub, so a rename of the hub (reconfigure
+    The box subentry is named like its hub (see box_title), so a rename of the hub (reconfigure
     or the rename dialog) is mirrored onto it first; that update calls this
     listener again, which then reloads.
     """
     box = box_subentry(entry)
-    if box is not None and box.title != entry.title:
-        hass.config_entries.async_update_subentry(entry, box, title=entry.title)
+    if box is not None and box.title != box_title(entry.title):
+        hass.config_entries.async_update_subentry(entry, box, title=box_title(entry.title))
         return
     await hass.config_entries.async_reload(entry.entry_id)
 

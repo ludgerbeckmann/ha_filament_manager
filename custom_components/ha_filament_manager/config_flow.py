@@ -28,7 +28,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.helpers import selector
 
-from .boxes import box_subentry, spool_subentries
+from .boxes import box_subentry, box_title, spool_subentries
 from .const import (
     COLOR_OPTIONS,
     CONF_COLOR,
@@ -251,7 +251,10 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
                     # device and entities, see const.SUBENTRY_TYPE_BOX.
                     subentries=[
                         ConfigSubentryData(
-                            data={}, subentry_type=SUBENTRY_TYPE_BOX, title=name, unique_id=None
+                            data={},
+                            subentry_type=SUBENTRY_TYPE_BOX,
+                            title=box_title(name),
+                            unique_id=None,
                         )
                     ],
                 )
@@ -271,7 +274,7 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["name"] = "name_required"
             else:
                 if (box := box_subentry(entry)) is not None:
-                    self.hass.config_entries.async_update_subentry(entry, box, title=name)
+                    self.hass.config_entries.async_update_subentry(entry, box, title=box_title(name))
                 return self.async_update_and_abort(entry, title=name, data=user_input)
 
         defaults = {CONF_NAME: entry.title, **entry.data}

@@ -30,6 +30,10 @@ SUBENTRY_TYPE_SPOOL: Final = "spool"
 # Assistant from listing them under "devices without a subentry"; the box's
 # settings live in the hub entry's data.
 SUBENTRY_TYPE_BOX: Final = "box"
+# Home Assistant lists a hub's subentries sorted by title. A leading symbol
+# sorts before digits and letters, so the box (named like its hub) always
+# comes first, ahead of the spools.
+BOX_TITLE_PREFIX: Final = "📦 "
 
 DEFAULT_TOTAL_WEIGHT: Final = 1000
 DEFAULT_HUMIDITY_MAX: Final = 40
