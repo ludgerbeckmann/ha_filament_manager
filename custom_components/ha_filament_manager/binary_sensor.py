@@ -63,7 +63,7 @@ async def async_setup_entry(
         _async_remove_humidity_alert_entity(hass, subentry)
 
         if subentry.data.get(CONF_LOW_STOCK_THRESHOLD) is not None:
-            async_add_entities([FilamentLowStockAlert(entry, subentry)], config_subentry_id=subentry_id)
+            async_add_entities([FilamentLowStockAlert(hass, entry, subentry)], config_subentry_id=subentry_id)
 
 
 def _async_remove_humidity_alert_entity(hass: HomeAssistant, subentry: ConfigSubentry) -> None:
@@ -201,13 +201,13 @@ class FilamentLowStockAlert(BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_icon = "mdi:package-variant-minus"
 
-    def __init__(self, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         self._entry = entry
         self._subentry = subentry
         self._threshold = subentry.data[CONF_LOW_STOCK_THRESHOLD]
         self._percent: float | None = None
         self._attr_unique_id = f"{subentry.subentry_id}_low_stock_alert"
-        self._attr_device_info = spool_device_info(entry, subentry)
+        self._attr_device_info = spool_device_info(hass, entry, subentry)
         self._attr_is_on = False
 
     async def async_added_to_hass(self) -> None:

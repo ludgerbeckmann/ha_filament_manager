@@ -43,7 +43,7 @@ async def async_setup_entry(
         if subentry.subentry_type != SUBENTRY_TYPE_SPOOL:
             continue
         async_add_entities(
-            [FilamentRemainingWeightNumber(entry, subentry)], config_subentry_id=subentry_id
+            [FilamentRemainingWeightNumber(hass, entry, subentry)], config_subentry_id=subentry_id
         )
 
 
@@ -59,11 +59,11 @@ class FilamentRemainingWeightNumber(RestoreNumber):
     _attr_native_min_value = 0
     _attr_icon = "mdi:printer-3d-nozzle-outline"
 
-    def __init__(self, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         self._entry = entry
         self._subentry = subentry
         self._attr_unique_id = f"{subentry.subentry_id}_remaining_weight"
-        self._attr_device_info = spool_device_info(entry, subentry)
+        self._attr_device_info = spool_device_info(hass, entry, subentry)
         self._attr_native_max_value = subentry.data[CONF_TOTAL_WEIGHT]
 
     async def async_added_to_hass(self) -> None:
