@@ -519,6 +519,12 @@ async def test_hub_device_exists_without_a_humidity_sensor_and_links_its_spools(
     assert spool_device.via_device_id == box_device.id
 
 
+async def test_spool_devices_do_not_use_the_deprecated_via_device(hass: HomeAssistant, caplog) -> None:
+    """Home Assistant 2026.8 deprecated `via_device` (removed in 2027.8): use `via_device_id`."""
+    await _setup_entry(hass)
+    assert "via_device" not in caplog.text
+
+
 async def test_humidity_alert_tracks_source_sensor(hass: HomeAssistant) -> None:
     hass.states.async_set("sensor.dry_box_humidity", "30")
     await hass.async_block_till_done()

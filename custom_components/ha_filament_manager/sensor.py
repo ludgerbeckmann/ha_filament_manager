@@ -37,9 +37,9 @@ async def async_setup_entry(
             continue
         async_add_entities(
             [
-                FilamentRemainingPercentageSensor(entry, subentry),
-                FilamentMaterialSensor(entry, subentry),
-                FilamentColorSensor(entry, subentry),
+                FilamentRemainingPercentageSensor(hass, entry, subentry),
+                FilamentMaterialSensor(hass, entry, subentry),
+                FilamentColorSensor(hass, entry, subentry),
             ],
             config_subentry_id=subentry_id,
         )
@@ -70,11 +70,11 @@ class FilamentRemainingPercentageSensor(SensorEntity):
     _attr_icon = "mdi:gauge"
     _attr_should_poll = False
 
-    def __init__(self, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         self._entry = entry
         self._subentry = subentry
         self._attr_unique_id = f"{subentry.subentry_id}_remaining_percentage"
-        self._attr_device_info = spool_device_info(entry, subentry)
+        self._attr_device_info = spool_device_info(hass, entry, subentry)
 
     async def async_added_to_hass(self) -> None:
         """Recompute whenever the spool's remaining weight changes."""
@@ -105,9 +105,9 @@ class FilamentMaterialSensor(SensorEntity):
     _attr_translation_key = "material"
     _attr_icon = "mdi:flask-outline"
 
-    def __init__(self, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         self._attr_unique_id = f"{subentry.subentry_id}_material"
-        self._attr_device_info = spool_device_info(entry, subentry)
+        self._attr_device_info = spool_device_info(hass, entry, subentry)
         self._attr_native_value = subentry.data.get(CONF_MATERIAL)
         self._attr_extra_state_attributes = {
             "diameter_mm": subentry.data.get(CONF_DIAMETER),
@@ -123,7 +123,7 @@ class FilamentColorSensor(SensorEntity):
     _attr_translation_key = "color"
     _attr_icon = "mdi:palette"
 
-    def __init__(self, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         self._attr_unique_id = f"{subentry.subentry_id}_color"
-        self._attr_device_info = spool_device_info(entry, subentry)
+        self._attr_device_info = spool_device_info(hass, entry, subentry)
         self._attr_native_value = subentry.data.get(CONF_COLOR)
