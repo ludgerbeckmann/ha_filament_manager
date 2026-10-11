@@ -253,11 +253,20 @@ auswählen, oder per YAML:
 ```yaml
 type: custom:filament-manager-card
 title: Meine Spulen   # optional
-collapse_boxes: true  # optional: Filamentboxen starten eingeklappt (Standard: false)
+group_by: box         # optional: box (Standard) | material | none
+only_in_printer: true # optional: nur Spulen anzeigen, die im Drucker (AMS) stecken
+collapse_boxes: true  # optional: Gruppen starten eingeklappt (Standard: false)
 ```
 
-Titel und Ein-/Ausklapp-Standard lassen sich auch über den visuellen
-Karten-Editor setzen (Stift-Symbol auf der Karte), ohne YAML zu bearbeiten.
+- `group_by: box` gruppiert nach Filamentbox, `material` nach Materialtyp
+  (die Spulenzeile zeigt dann zusätzlich die Box), `none` zeigt eine flache
+  Liste.
+- Spulen, die laut Kopplung mit Bambu Lab (siehe oben) gerade im Drucker
+  stecken, tragen ein Drucker-Symbol. Mit `only_in_printer` werden nur diese
+  angezeigt.
+
+Alle Optionen lassen sich auch über den visuellen Karten-Editor setzen
+(Stift-Symbol auf der Karte), ohne YAML zu bearbeiten.
 
 Ein Klick auf eine Zeile öffnet die Detailansicht der **Restmenge** (dort
 direkt editierbar); ein Klick auf das Luftfeuchtigkeits-Symbol (auch in der

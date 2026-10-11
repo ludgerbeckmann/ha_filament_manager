@@ -61,12 +61,70 @@ class FilamentManagerCard extends HTMLElement {
   setConfig(config) {
     const previous = this._config;
     this._config = config || {};
-    if (previous && Boolean(previous.collapse_boxes) !== Boolean(this._config.collapse_boxes)) {
+    if (!previous) return;
+    if (Boolean(previous.collapse_boxes) !== Boolean(this._config.collapse_boxes)) {
       // The default changed (e.g. in the visual editor): apply it to every box.
       this._boxToggles.clear();
+    }
+    if (
+      previous.group_by !== this._config.group_by ||
+      Boolean(previous.only_in_printer) !== Boolean(this._config.only_in_printer) ||
+      Boolean(previous.collapse_boxes) !== Boolean(this._config.collapse_boxes)
+    ) {
       this._lastSignature = undefined;
       this._renderIfReady();
     }
+  }
+
+  /** "box" (default), "material" or "none"; anything else counts as "box". */
+  _groupBy() {
+    const value = this._config && this._config.group_by;
+    return value === "material" || value === "none" ? value : "box";
+  }
+
+  /**
+   * Turns the collected spools into what is drawn: header groups (a box, or a
+   * material) plus loose rows, honouring `group_by` and `only_in_printer`.
+   * Spools outside any box stay loose in box mode.
+   */
+  _layout(data) {
+    const wanted = (spool) => !(this._config && this._config.only_in_printer) || spool.inPrinter;
+    const mode = this._groupBy();
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    const spools = data.spools.filter(wanted);
+
+    if (mode === "none") {
+      return { groups: [], loose: [...spools].sort(byName) };
+    }
+    if (mode === "material") {
+      const groups = new Map();
+      for (const spool of spools) {
+        const name = spool.material || "–";
+        if (!groups.has(name)) {
+          groups.set(name, { key: `material:${name}`, name, icon: "mdi:spool", spools: [], hasHumiditySensor: false });
+        }
+        groups.get(name).spools.push(spool);
+      }
+      const list = [...groups.values()].sort(byName);
+      list.forEach((group) => group.spools.sort(byName));
+      return { groups: list, loose: [] };
+    }
+    const groups = new Map();
+    const loose = [];
+    for (const spool of spools) {
+      const box = spool.boxId && data.boxes[spool.boxId];
+      if (!box) {
+        loose.push(spool);
+        continue;
+      }
+      if (!groups.has(box.deviceId)) {
+        groups.set(box.deviceId, { ...box, key: box.deviceId, icon: "mdi:archive-outline", spools: [] });
+      }
+      groups.get(box.deviceId).spools.push(spool);
+    }
+    const list = [...groups.values()].sort(byName);
+    list.forEach((group) => group.spools.sort(byName));
+    return { groups: list, loose: loose.sort(byName) };
   }
 
   _isBoxCollapsed(deviceId) {
@@ -81,12 +139,12 @@ class FilamentManagerCard extends HTMLElement {
   }
 
   getCardSize() {
-    const data = this._data || { boxes: [], ungrouped: [] };
+    const { groups, loose } = this._layout(this._data || { boxes: {}, spools: [] });
     const rows =
-      data.boxes.reduce(
-        (sum, box) => sum + (this._isBoxCollapsed(box.deviceId) ? 1 : 1 + box.spools.length),
+      groups.reduce(
+        (sum, group) => sum + (this._isBoxCollapsed(group.key) ? 1 : 1 + group.spools.length),
         0
-      ) + data.ungrouped.length;
+      ) + loose.length;
     return Math.max(1, rows) + 1;
   }
 
@@ -132,14 +190,18 @@ class FilamentManagerCard extends HTMLElement {
     }
 
     const readHumidity = (entries) => {
-      const binarySensorEntry = entries.find((e) => e.entity_id.startsWith("binary_sensor."));
-      const binaryState = stateOf(binarySensorEntry && binarySensorEntry.entity_id);
+      // A spool can own several binary sensors (low stock, in printer); the
+      // humidity one is the one that knows its source sensor.
+      const binaryState = entries
+        .filter((e) => e.entity_id.startsWith("binary_sensor."))
+        .map((e) => stateOf(e.entity_id))
+        .find((state) => state && "source_entity_id" in state.attributes);
       // A spool that gets assigned to a filament box leaves its own,
       // now-superseded humidity alert entity registered but no longer live
       // (state "unavailable", no attributes) until the integration is
       // reloaded/updated - treat that the same as "no sensor" rather than
       // showing a stale/broken badge.
-      const isLive = !!binaryState && "source_entity_id" in binaryState.attributes;
+      const isLive = !!binaryState;
       return {
         // Prefer the linked humidity sensor itself (shows the actual
         // reading and its history) over our on/off binary_sensor as the tap
@@ -161,12 +223,11 @@ class FilamentManagerCard extends HTMLElement {
       boxes[deviceId] = {
         deviceId,
         name: (device && (device.name_by_user || device.name)) || "Filamentbox",
-        spools: [],
         ...readHumidity(entries),
       };
     }
 
-    const ungrouped = [];
+    const spools = [];
     for (const [deviceId, entries] of Object.entries(byDevice)) {
       const numberEntry = entries.find((e) => e.entity_id.startsWith("number."));
       if (!numberEntry) continue;
@@ -189,6 +250,17 @@ class FilamentManagerCard extends HTMLElement {
         }
       }
 
+      // The "in printer" sensor belongs to spools coupled to an AMS slot; it
+      // is recognised by its translation key, or - when the registry does
+      // not expose it - by the slot attribute it carries while available.
+      const printerEntry = entries.find(
+        (e) =>
+          e.entity_id.startsWith("binary_sensor.") &&
+          (e.translation_key === "in_printer" ||
+            (stateOf(e.entity_id) && "ams_slot" in stateOf(e.entity_id).attributes))
+      );
+      const printerState = stateOf(printerEntry && printerEntry.entity_id);
+
       const numberState = stateOf(numberEntry.entity_id);
       const percent = percentState ? Number(percentState.state) : null;
 
@@ -204,23 +276,19 @@ class FilamentManagerCard extends HTMLElement {
         // than the (read-only) percentage sensor - fall back to it if for
         // some reason the number entity is missing.
         primaryEntityId: numberEntry.entity_id,
+        hasPrinter: !!printerEntry,
+        inPrinter: !!printerState && printerState.state === "on",
+        amsSlot: printerState && printerState.attributes.ams_slot ? printerState.attributes.ams_slot : null,
         ...readHumidity(entries),
       };
 
       const boxId = device && device.via_device_id;
-      if (boxId && boxes[boxId]) {
-        boxes[boxId].spools.push(spool);
-      } else {
-        ungrouped.push(spool);
-      }
+      spool.boxId = boxId && boxes[boxId] ? boxId : null;
+      spool.boxName = spool.boxId ? boxes[boxId].name : null;
+      spools.push(spool);
     }
 
-    const boxList = Object.values(boxes).filter((box) => box.spools.length > 0);
-    boxList.forEach((box) => box.spools.sort((a, b) => a.name.localeCompare(b.name)));
-    boxList.sort((a, b) => a.name.localeCompare(b.name));
-    ungrouped.sort((a, b) => a.name.localeCompare(b.name));
-
-    return { boxes: boxList, ungrouped };
+    return { boxes, spools };
   }
 
   _openMoreInfo(entityId) {
@@ -233,7 +301,7 @@ class FilamentManagerCard extends HTMLElement {
     this.dispatchEvent(event);
   }
 
-  _renderSpoolRow(spool, { indent = false } = {}) {
+  _renderSpoolRow(spool, { indent = false, showBox = false } = {}) {
     const percentLabel = spool.percent !== null ? `${spool.percent}%` : "–";
     const tone = percentTone(spool.percent);
     const barWidth = spool.percent !== null ? Math.max(0, Math.min(100, spool.percent)) : 0;
@@ -252,6 +320,16 @@ class FilamentManagerCard extends HTMLElement {
          </div>`
       : "";
 
+    const printerBadge = spool.inPrinter
+      ? `<ha-icon
+           class="printer-badge"
+           icon="mdi:printer-3d"
+           title="Im Drucker${spool.amsSlot ? ` (${spool.amsSlot})` : ""}"
+         ></ha-icon>`
+      : "";
+    const metaText =
+      [spool.material, spool.color, showBox ? spool.boxName : null].filter(Boolean).join(" · ") || "&nbsp;";
+
     const swatchColor = swatchFor(spool.color);
     const isSwatchTransparent = swatchColor === "transparent";
 
@@ -264,8 +342,9 @@ class FilamentManagerCard extends HTMLElement {
         ></span>
         <div class="info">
           <div class="name">${spool.name}</div>
-          <div class="meta">${[spool.material, spool.color].filter(Boolean).join(" · ") || "&nbsp;"}</div>
+          <div class="meta">${metaText}</div>
         </div>
+        ${printerBadge}
         <div class="progress-col">
           <div class="track"><div class="fill" style="width:${barWidth}%;background:${tone}"></div></div>
           <span class="progress-sub" style="color:${tone}">${progressSub}</span>
@@ -276,7 +355,8 @@ class FilamentManagerCard extends HTMLElement {
   }
 
   _renderBoxSection(box) {
-    const isCollapsed = this._isBoxCollapsed(box.deviceId);
+    const isCollapsed = this._isBoxCollapsed(box.key);
+    const showBox = this._groupBy() === "material";
 
     // Whole percent, in a fixed-width slot: sensors report anything from "50"
     // to "37.47", which would otherwise shift the color dots left and right
@@ -310,19 +390,19 @@ class FilamentManagerCard extends HTMLElement {
     return `
       <div
         class="box-header"
-        data-toggle-box="${box.deviceId}"
+        data-toggle-box="${box.key}"
         title="${isCollapsed ? "Spulen anzeigen" : "Spulen ausblenden"}"
       >
         <ha-icon
           class="box-toggle"
           icon="${isCollapsed ? "mdi:chevron-right" : "mdi:chevron-down"}"
         ></ha-icon>
-        <ha-icon class="box-icon" icon="mdi:archive-outline"></ha-icon>
+        <ha-icon class="box-icon" icon="${box.icon}"></ha-icon>
         <span class="box-name">${box.name}</span>
         ${spoolSwatches}
         ${humidityBadge}
       </div>
-      ${isCollapsed ? "" : box.spools.map((spool) => this._renderSpoolRow(spool, { indent: true })).join("")}
+      ${isCollapsed ? "" : box.spools.map((spool) => this._renderSpoolRow(spool, { indent: true, showBox })).join("")}
     `;
   }
 
@@ -333,12 +413,19 @@ class FilamentManagerCard extends HTMLElement {
 
     const title = this._config.title !== undefined ? this._config.title : "Filament Manager";
 
-    const boxSections = data.boxes.map((box) => this._renderBoxSection(box)).join("");
-    const ungroupedRows = data.ungrouped.map((spool) => this._renderSpoolRow(spool)).join("");
+    const { groups, loose } = this._layout(data);
+    const boxSections = groups.map((group) => this._renderBoxSection(group)).join("");
+    const ungroupedRows = loose
+      .map((spool) => this._renderSpoolRow(spool, { showBox: this._groupBy() === "none" }))
+      .join("");
     const rows =
       boxSections || ungroupedRows
         ? `<div class="rows">${boxSections}${ungroupedRows}</div>`
-        : `<div class="empty">Keine Filamentspulen gefunden. Über "Integration hinzufügen" → "Filament Manager" anlegen.</div>`;
+        : `<div class="empty">${
+            data.spools.length
+              ? "Keine Spule im Drucker."
+              : 'Keine Filamentspulen gefunden. Über "Integration hinzufügen" → "Filament Manager" anlegen.'
+          }</div>`;
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -433,6 +520,7 @@ class FilamentManagerCard extends HTMLElement {
         }
         .fill { height: 100%; border-radius: 3px; }
         .progress-sub { font-size: 0.8em; text-align: left; }
+        .printer-badge { --mdc-icon-size: 20px; color: var(--primary-color); flex: none; }
         .humidity-col {
           display: flex;
           flex-direction: column;
@@ -504,8 +592,8 @@ window.customCards.push({
 });
 
 /**
- * Minimal visual editor: the (optional) card title and whether filament
- * boxes start collapsed, so Lovelace's
+ * Minimal visual editor: the (optional) card title, grouping, whether groups
+ * start collapsed and the in-printer filter, so Lovelace's
  * "Visual editor not supported" fallback notice no longer shows up. Uses a
  * plain native <input> styled to match Home Assistant: <ha-textfield> is only
  * registered once some other part of the frontend has loaded it, so relying
@@ -551,6 +639,20 @@ class FilamentManagerCardEditor extends HTMLElement {
           margin: 0 0 4px 4px;
           color: var(--secondary-text-color);
         }
+        label.spaced { margin-top: 16px; }
+        select {
+          box-sizing: border-box;
+          width: 100%;
+          height: 56px;
+          padding: 0 12px;
+          font: inherit;
+          font-size: 16px;
+          color: var(--primary-text-color);
+          background: var(--input-fill-color, var(--secondary-background-color, rgba(0, 0, 0, 0.06)));
+          border: none;
+          border-bottom: 1px solid var(--input-idle-line-color, var(--secondary-text-color));
+          border-radius: 4px 4px 0 0;
+        }
         input[type="text"] {
           box-sizing: border-box;
           width: 100%;
@@ -591,9 +693,19 @@ class FilamentManagerCardEditor extends HTMLElement {
       <div class="form">
         <label for="title">Titel (leer lassen für „Filament Manager“)</label>
         <input id="title" type="text" autocomplete="off" />
+        <label for="group_by" class="spaced">Gruppieren nach</label>
+        <select id="group_by">
+          <option value="box">Filamentbox</option>
+          <option value="material">Material</option>
+          <option value="none">Nicht gruppieren</option>
+        </select>
         <label class="option">
           <input id="collapse" type="checkbox" />
-          Filamentboxen standardmäßig eingeklappt anzeigen
+          Gruppen standardmäßig eingeklappt anzeigen
+        </label>
+        <label class="option">
+          <input id="only_in_printer" type="checkbox" />
+          Nur Spulen im Drucker anzeigen
         </label>
       </div>
     `;
@@ -604,6 +716,12 @@ class FilamentManagerCardEditor extends HTMLElement {
     this.shadowRoot.querySelector("#collapse").addEventListener("change", (event) => {
       this._updateConfig("collapse_boxes", event.target.checked || undefined);
     });
+    this.shadowRoot.querySelector("#only_in_printer").addEventListener("change", (event) => {
+      this._updateConfig("only_in_printer", event.target.checked || undefined);
+    });
+    this.shadowRoot.querySelector("#group_by").addEventListener("change", (event) => {
+      this._updateConfig("group_by", event.target.value === "box" ? undefined : event.target.value);
+    });
   }
 
   _syncField() {
@@ -613,6 +731,10 @@ class FilamentManagerCardEditor extends HTMLElement {
       field.value = desired;
     }
     this.shadowRoot.querySelector("#collapse").checked = Boolean(this._config.collapse_boxes);
+    this.shadowRoot.querySelector("#only_in_printer").checked = Boolean(this._config.only_in_printer);
+    this.shadowRoot.querySelector("#group_by").value = ["material", "none"].includes(this._config.group_by)
+      ? this._config.group_by
+      : "box";
   }
 
   /** Set (or, for `undefined`, remove) one config key and tell Lovelace. */

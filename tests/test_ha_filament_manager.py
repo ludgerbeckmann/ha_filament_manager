@@ -758,6 +758,7 @@ async def test_overview_card_is_served_and_registered(hass: HomeAssistant, hass_
     assert resp.status == 200
     body = await resp.text()
     assert "customElements.define(\"filament-manager-card\"" in body
+    assert "group_by" in body and "only_in_printer" in body
 
 
 async def test_hubs_are_independent(hass: HomeAssistant) -> None:
