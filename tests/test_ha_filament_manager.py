@@ -13,6 +13,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 from custom_components.ha_filament_manager.boxes import box_title
 from custom_components.ha_filament_manager.const import (
     BOX_TITLE_PREFIX,
+    CONF_AMS_SLOT,
+    CONF_AMS_SYNC,
     CARD_URL_PATH,
     CONF_COLOR,
     CONF_DIAMETER,
@@ -767,3 +769,192 @@ async def test_hubs_are_independent(hass: HomeAssistant) -> None:
     assert hass.states.get(SPOOL_COUNT_ENTITY).state == "1"
     assert hass.states.get("sensor.other_box_spools").state == "1"
     assert hass.states.get("number.other_spool_remaining_weight") is not None
+
+
+# --- AMS slot coupling (Bambu Lab printer integration) ------------------------
+
+SLOT = "sensor.p1s_ams_1_tray_1"
+RFID_A = "0123456789ABCDEF0123456789ABCDEF"
+RFID_B = "FEDCBA9876543210FEDCBA9876543210"
+IN_PRINTER = "binary_sensor.test_spool_in_printer"
+
+
+def _register_slot(hass: HomeAssistant, entity_id: str = SLOT, unique_id: str = "P1S_0309_AMS_1_tray_1") -> None:
+    """Register an AMS tray sensor the way the Bambu Lab integration does."""
+    er.async_get(hass).async_get_or_create(
+        "sensor", "bambu_lab", unique_id, suggested_object_id=entity_id.split(".", 1)[1]
+    )
+
+
+def _set_slot(
+    hass: HomeAssistant, *, rfid: str | None = RFID_A, remain: int = 80, empty: bool = False, state: str = "PLA Basic"
+) -> None:
+    hass.states.async_set(
+        SLOT,
+        state,
+        {
+            "empty": empty,
+            "unknown": False,
+            "tray_uuid": rfid or "0" * 32,
+            "tag_uid": "1234567890ABCDEF" if rfid else "0" * 16,
+            "remain": remain,
+            "active": False,
+        },
+    )
+
+
+async def _setup_ams_spool(hass: HomeAssistant, **spool_data) -> MockConfigEntry:
+    _register_slot(hass)
+    return await _setup_hub(hass, subentries_data=[_spool_subentry(**{CONF_AMS_SLOT: SLOT, **spool_data})])
+
+
+async def test_ams_slot_field_is_only_offered_with_the_bambu_lab_integration(hass: HomeAssistant) -> None:
+    hub = await _setup_hub(hass)
+
+    async def _details_schema():
+        result = await _start_spool_flow(hass, hub)
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {CONF_MATERIAL: "PETG", CONF_COLOR: "Rot", "manufacturer": ""}
+        )
+        assert result["step_id"] == "details"
+        return result["data_schema"]
+
+    schema = await _details_schema()
+    assert CONF_AMS_SLOT not in [str(key) for key in schema.schema]
+
+    _register_slot(hass)
+    _register_slot(hass, "sensor.other_sensor", "P1S_0309_print_status")  # not a tray sensor
+    schema = await _details_schema()
+    key = next(key for key in schema.schema if str(key) == CONF_AMS_SLOT)
+    assert schema.schema[key].config["include_entities"] == [SLOT]
+    assert _schema_default(schema, CONF_AMS_SYNC) is True
+
+
+async def test_spool_is_in_the_printer_while_its_rfid_is_in_the_slot(hass: HomeAssistant) -> None:
+    _set_slot(hass, rfid=RFID_A)
+    await _setup_ams_spool(hass)
+    assert hass.states.get(IN_PRINTER).state == "on"
+    assert hass.states.get(IN_PRINTER).attributes["ams_slot"] == SLOT
+    assert hass.states.get(IN_PRINTER).attributes["rfid_known"] is True
+
+    _set_slot(hass, empty=True)
+    await hass.async_block_till_done()
+    assert hass.states.get(IN_PRINTER).state == "off"
+
+    # Another spool (other RFID) in the slot is not this one.
+    _set_slot(hass, rfid=RFID_B)
+    await hass.async_block_till_done()
+    assert hass.states.get(IN_PRINTER).state == "off"
+
+    _set_slot(hass, rfid=RFID_A)
+    await hass.async_block_till_done()
+    assert hass.states.get(IN_PRINTER).state == "on"
+
+    # A spool without RFID in the slot is not our RFID spool either.
+    _set_slot(hass, rfid=None)
+    await hass.async_block_till_done()
+    assert hass.states.get(IN_PRINTER).state == "off"
+
+    hass.states.async_set(SLOT, "unavailable")
+    await hass.async_block_till_done()
+    assert hass.states.get(IN_PRINTER).state == "unavailable"
+
+
+async def test_spool_without_rfid_counts_as_loaded_when_the_slot_is_not_empty(hass: HomeAssistant) -> None:
+    _set_slot(hass, rfid=None, remain=-1)
+    await _setup_ams_spool(hass)
+    state = hass.states.get(IN_PRINTER)
+    assert state.state == "on"
+    assert state.attributes["rfid_known"] is False
+    assert state.attributes["ams_remaining_percent"] is None
+
+
+async def test_remaining_weight_follows_the_ams_when_it_changes(hass: HomeAssistant) -> None:
+    _set_slot(hass, rfid=RFID_A, remain=80)
+    await _setup_ams_spool(hass)
+
+    # Not at startup: the stored 750 g stays although the AMS says 80 %.
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 750
+
+    _set_slot(hass, rfid=RFID_A, remain=70)
+    await hass.async_block_till_done()
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 700
+    assert float(hass.states.get(PERCENT_ENTITY).state) == 70.0
+
+    # Other attribute changes with the same percentage do not overwrite a manual value.
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": NUMBER_ENTITY, "value": 650}, blocking=True
+    )
+    _set_slot(hass, rfid=RFID_A, remain=70, state="PLA Basic (active)")
+    await hass.async_block_till_done()
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 650
+
+
+async def test_remaining_weight_does_not_follow_a_different_spool_or_when_switched_off(hass: HomeAssistant) -> None:
+    _set_slot(hass, rfid=RFID_A, remain=80)
+    hub = await _setup_ams_spool(hass)
+    _set_slot(hass, rfid=RFID_B, remain=40)
+    await hass.async_block_till_done()
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 750
+
+    # Same for a spool that has the sync switched off.
+    spool = _subentry_by_title(hub, "Test Spool")
+    hass.config_entries.async_update_subentry(
+        hub, spool, data={**spool.data, CONF_AMS_SYNC: False}
+    )
+    await hass.async_block_till_done()
+    _set_slot(hass, rfid=RFID_B, remain=60)
+    await hass.async_block_till_done()
+    _set_slot(hass, rfid=RFID_B, remain=50)
+    await hass.async_block_till_done()
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 750
+
+
+async def test_refilling_forgets_the_rfid_of_the_old_spool(hass: HomeAssistant) -> None:
+    _set_slot(hass, rfid=RFID_A)
+    await _setup_ams_spool(hass)
+    _set_slot(hass, rfid=RFID_B)
+    await hass.async_block_till_done()
+    assert hass.states.get(IN_PRINTER).state == "off"
+
+    # A new spool replaces the old one: refill it, and the RFID now in the slot is its own.
+    await hass.services.async_call(DOMAIN, "refill_spool", {"entity_id": NUMBER_ENTITY}, blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get(IN_PRINTER).state == "on"
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 1000
+
+
+async def test_learned_rfid_survives_a_reload_but_not_a_slot_change(hass: HomeAssistant) -> None:
+    _set_slot(hass, rfid=RFID_A)
+    hub = await _setup_ams_spool(hass)
+    assert hass.states.get(IN_PRINTER).state == "on"
+
+    # Another spool is put into the slot while the integration reloads.
+    _set_slot(hass, rfid=RFID_B)
+    await hass.config_entries.async_reload(hub.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(IN_PRINTER).state == "off"
+
+    # A different slot means a different spool: what was learned is dropped.
+    _register_slot(hass, "sensor.p1s_ams_1_tray_2", "P1S_0309_AMS_1_tray_2")
+    hass.states.async_set("sensor.p1s_ams_1_tray_2", "PLA", {"empty": False, "unknown": False,
+        "tray_uuid": RFID_B, "tag_uid": "1234567890ABCDEF", "remain": 90})
+    spool = _subentry_by_title(hub, "Test Spool")
+    hass.config_entries.async_update_subentry(hub, spool, data={**spool.data, CONF_AMS_SLOT: "sensor.p1s_ams_1_tray_2"})
+    await hass.async_block_till_done()
+    assert hass.states.get(IN_PRINTER).state == "on"
+
+
+async def test_in_printer_entity_is_removed_when_the_slot_is_removed(hass: HomeAssistant) -> None:
+    _set_slot(hass, rfid=RFID_A)
+    hub = await _setup_ams_spool(hass)
+    registry = er.async_get(hass)
+    assert registry.async_get(IN_PRINTER) is not None
+
+    spool = _subentry_by_title(hub, "Test Spool")
+    data = {key: value for key, value in spool.data.items() if key != CONF_AMS_SLOT}
+    hass.config_entries.async_update_subentry(hub, spool, data=data)
+    await hass.async_block_till_done()
+    assert registry.async_get(IN_PRINTER) is None
+    assert hass.states.get(IN_PRINTER) is None
+

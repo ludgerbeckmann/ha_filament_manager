@@ -20,6 +20,9 @@ CONF_NOTIFY_TARGETS: Final = "notify_targets"
 CONF_PERSISTENT_NOTIFICATION: Final = "persistent_notification"
 # Optional upper limit on the number of spools in a hub (empty = unlimited).
 CONF_SPOOL_LIMIT: Final = "spool_limit"
+# A spool's AMS slot: a tray sensor of the Bambu Lab printer integration (ha-bambulab).
+CONF_AMS_SLOT: Final = "ams_slot"
+CONF_AMS_SYNC: Final = "ams_sync_remaining"
 
 # A config entry is a hub, and a hub *is* one filament box (or shelf): its
 # data holds the box's humidity sensor, limits and notification settings.
@@ -191,6 +194,16 @@ CARD_URL_PATH: Final = f"/{DOMAIN}_files/{CARD_FILENAME}"
 # Bump whenever the card's JS changes, to bust browser caching of the
 # static file (independent of the integration's own manifest version).
 CARD_VERSION: Final = "15"
+
+
+def signal_ams_updated(subentry_id: str) -> str:
+    """Return the dispatcher signal name for changes of a spool's AMS slot state."""
+    return f"{DOMAIN}_{subentry_id}_ams_updated"
+
+
+def signal_ams_remaining(subentry_id: str) -> str:
+    """Return the dispatcher signal name for a new AMS remaining percentage of a spool."""
+    return f"{DOMAIN}_{subentry_id}_ams_remaining"
 
 
 def signal_spool_updated(subentry_id: str) -> str:

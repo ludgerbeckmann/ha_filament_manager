@@ -62,6 +62,8 @@
             "total_weight": "Gesamtgewicht (neue Spule)",
             "initial_remaining_weight": "Aktuelle Restmenge",
             "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
+            "ams_slot": "AMS-Slot (optional, Bambu-Lab-Drucker)",
+            "ams_sync_remaining": "Restmenge aus dem AMS übernehmen (nur Spulen mit RFID)",
             "notify_targets": "Benachrichtigen (optional)",
             "persistent_notification": "Dauerhafte Benachrichtigung anzeigen"
           }
@@ -84,6 +86,8 @@
             "diameter": "Durchmesser",
             "total_weight": "Gesamtgewicht (neue Spule)",
             "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
+            "ams_slot": "AMS-Slot (optional, Bambu-Lab-Drucker)",
+            "ams_sync_remaining": "Restmenge aus dem AMS übernehmen (nur Spulen mit RFID)",
             "notify_targets": "Benachrichtigen (optional)",
             "persistent_notification": "Dauerhafte Benachrichtigung anzeigen"
           }
@@ -136,6 +140,9 @@
       },
       "low_stock_alert": {
         "name": "Bestand niedrig"
+      },
+      "in_printer": {
+        "name": "Im Drucker"
       }
     }
   },

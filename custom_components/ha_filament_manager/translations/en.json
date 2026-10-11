@@ -62,6 +62,8 @@
             "total_weight": "Total weight (new spool)",
             "initial_remaining_weight": "Current remaining weight",
             "low_stock_threshold": "Low stock warning below (optional, e.g. 15)",
+            "ams_slot": "AMS slot (optional, Bambu Lab printer)",
+            "ams_sync_remaining": "Follow the AMS remaining amount (spools with RFID only)",
             "notify_targets": "Notify (optional)",
             "persistent_notification": "Show a persistent notification"
           }
@@ -84,6 +86,8 @@
             "diameter": "Diameter",
             "total_weight": "Total weight (new spool)",
             "low_stock_threshold": "Low stock warning below (optional, e.g. 15)",
+            "ams_slot": "AMS slot (optional, Bambu Lab printer)",
+            "ams_sync_remaining": "Follow the AMS remaining amount (spools with RFID only)",
             "notify_targets": "Notify (optional)",
             "persistent_notification": "Show a persistent notification"
           }
@@ -136,6 +140,9 @@
       },
       "low_stock_alert": {
         "name": "Low stock alert"
+      },
+      "in_printer": {
+        "name": "In printer"
       }
     }
   },

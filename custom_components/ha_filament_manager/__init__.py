@@ -4,7 +4,7 @@ A config entry is a hub, and a hub is one filament box (or shelf): its data
 holds the box's humidity sensor, limits and notification settings (see
 config_flow.py). Every filament spool is a config subentry of a hub, each
 getting its own device (linked to the hub's device) and entities. A spool's
-live state (remaining weight) is kept in ``entry.runtime_data``, keyed by
+live state (remaining weight) is kept in ``entry.runtime_data.spools``, keyed by
 its subentry id, so it can be shared between the editable number entity and
 the read-only percentage sensor without re-deriving it from entity state
 lookups.
@@ -23,6 +23,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
 from .boxes import box_subentry, box_title, new_box_subentry
+from .ams import AmsTracker
 from .entity import box_device_info
 from .const import (
     CARD_FILENAME,
@@ -41,6 +42,14 @@ class SpoolRuntimeData:
     """Live, mutable state for a single spool."""
 
     remaining_weight: float
+
+
+@dataclass
+class HubRuntimeData:
+    """Live state of a hub: its spools and the AMS slots they are coupled to."""
+
+    spools: dict[str, SpoolRuntimeData]
+    ams: AmsTracker
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -87,17 +96,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             device.id, remove_config_entry_id=entry.entry_id, remove_config_subentry_id=None
         )
 
-    entry.runtime_data = {
-        subentry_id: SpoolRuntimeData(
-            remaining_weight=subentry.data.get(
-                CONF_INITIAL_REMAINING_WEIGHT, subentry.data[CONF_TOTAL_WEIGHT]
+    tracker = AmsTracker(hass, entry)
+    entry.runtime_data = HubRuntimeData(
+        spools={
+            subentry_id: SpoolRuntimeData(
+                remaining_weight=subentry.data.get(
+                    CONF_INITIAL_REMAINING_WEIGHT, subentry.data[CONF_TOTAL_WEIGHT]
+                )
             )
-        )
-        for subentry_id, subentry in entry.subentries.items()
-        if subentry.subentry_type == SUBENTRY_TYPE_SPOOL
-    }
+            for subentry_id, subentry in entry.subentries.items()
+            if subentry.subentry_type == SUBENTRY_TYPE_SPOOL
+        },
+        ams=tracker,
+    )
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Only follow the AMS once the entities exist to receive its updates.
+    await tracker.async_start()
+    entry.async_on_unload(tracker.async_stop)
     return True
 
 

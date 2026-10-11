@@ -28,8 +28,11 @@ from homeassistant.config_entries import (
 )
 from homeassistant.helpers import selector
 
+from .ams import slot_entities
 from .boxes import box_subentry, box_title, spool_subentries
 from .const import (
+    CONF_AMS_SLOT,
+    CONF_AMS_SYNC,
     COLOR_OPTIONS,
     CONF_COLOR,
     CONF_DIAMETER,
@@ -166,7 +169,26 @@ def _notify_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
     return fields
 
 
-def _details_fields(defaults: dict[str, Any], *, include_initial: bool) -> dict[Any, Any]:
+def _ams_fields(defaults: dict[str, Any], slots: list[str]) -> dict[Any, Any]:
+    """The spool's AMS slot (Bambu Lab printer integration) - only when there is one to pick."""
+    current = defaults.get(CONF_AMS_SLOT)
+    options = sorted({*slots, *([current] if current else [])})
+    if not options:
+        return {}
+    # A suggested value (not a default) so the slot can be cleared again.
+    return {
+        vol.Optional(
+            CONF_AMS_SLOT, description={"suggested_value": current} if current else None
+        ): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor", include_entities=options)
+        ),
+        vol.Optional(CONF_AMS_SYNC, default=defaults.get(CONF_AMS_SYNC, True)): selector.BooleanSelector(),
+    }
+
+
+def _details_fields(
+    defaults: dict[str, Any], slots: list[str], *, include_initial: bool
+) -> dict[Any, Any]:
     fields: dict[Any, Any] = {}
 
     fields[
@@ -198,6 +220,7 @@ def _details_fields(defaults: dict[str, Any], *, include_initial: bool) -> dict[
         )
     )
 
+    fields.update(_ams_fields(defaults, slots))
     fields.update(_notify_fields(defaults))
 
     return fields
@@ -221,11 +244,11 @@ def _hub_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
     return fields
 
 
-def _build_reconfigure_schema(defaults: dict[str, Any]) -> vol.Schema:
+def _build_reconfigure_schema(defaults: dict[str, Any], slots: list[str]) -> vol.Schema:
     """Combined identity + details schema, used by the (single-step) spool reconfigure flow."""
     fields = {
         **_identity_fields(defaults, include_name=True),
-        **_details_fields(defaults, include_initial=False),
+        **_details_fields(defaults, slots, include_initial=False),
     }
     return vol.Schema(fields)
 
@@ -327,7 +350,7 @@ class SpoolSubentryFlowHandler(ConfigSubentryFlow):
                 self._spool_data = {**self._spool_data, **user_input}
                 return await self.async_step_name()
 
-        schema = vol.Schema(_details_fields(self._spool_data, include_initial=True))
+        schema = vol.Schema(_details_fields(self._spool_data, slot_entities(self.hass), include_initial=True))
         return self.async_show_form(step_id="details", data_schema=schema, errors=errors)
 
     async def async_step_name(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -360,5 +383,5 @@ class SpoolSubentryFlowHandler(ConfigSubentryFlow):
                 return self.async_update_and_abort(entry, subentry, title=name, data=user_input)
 
         defaults = {CONF_NAME: subentry.title, **subentry.data}
-        schema = _build_reconfigure_schema(defaults)
+        schema = _build_reconfigure_schema(defaults, slot_entities(self.hass))
         return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)

@@ -131,8 +131,32 @@ angezeigt (siehe "Dashboard-Karte" unten).
 | `sensor.<spule>_material` | Materialtyp (z. B. PLA, PETG) |
 | `sensor.<spule>_color` | Farbe |
 | `binary_sensor.<spule>_low_stock_alert` | Nur vorhanden, wenn ein Bestandsschwellwert hinterlegt wurde |
+| `binary_sensor.<spule>_in_printer` | "Im Drucker", nur vorhanden, wenn der Spule ein AMS-Slot zugeordnet ist (siehe unten) |
 | `sensor.<box>_spools` | Anzahl der Spulen in der Filamentbox (dem Hub) |
 | `binary_sensor.<box>_humidity_alert` | Luftfeuchtigkeitswarnung der Filamentbox, nur vorhanden, wenn die Box einen Sensor hat |
+
+## Kopplung mit Bambu Lab (AMS)
+
+Läuft die Integration [ha-bambulab](https://github.com/greghesp/ha-bambulab),
+erscheint in den Spulen-Einstellungen das Feld **AMS-Slot** (Auswahl der
+Slot-Sensoren, z. B. `sensor.p1s_ams_1_tray_1`). Das Feld wird nur angeboten,
+wenn solche Sensoren existieren; ohne ha-bambulab ändert sich nichts.
+
+- **Im Drucker**: Die Spule erhält die Entität `binary_sensor.<spule>_in_printer`.
+  Sie ist "an", solange der Slot belegt ist. Bei Spulen mit RFID (original
+  Bambu-Spulen) merkt sich der Filament Manager die RFID beim ersten Sehen;
+  wechselt eine andere Spule in den Slot, gilt die Spule als nicht mehr im
+  Drucker. Spulen ohne RFID zählen als im Drucker, solange der Slot belegt ist.
+- **Restmenge aus dem AMS übernehmen** (optional, Standard an): Für RFID-Spulen
+  folgt die Restmenge dem AMS-Wert, aber nur bei einer Änderung – beim Start
+  und bei manuell gesetzten Werten wird nichts überschrieben.
+- Beim Auffüllen (`refill_spool` bzw. Auffüll-Aktion) wird die gemerkte RFID
+  vergessen, sodass eine neue Spule im selben Slot sauber erkannt wird.
+
+Die Idee, AMS-Slots auszulesen, stammt aus
+[Bambu Filaments](https://github.com/Timmes123/ha-bambu-filaments) (MIT,
+© 2026 Timmes123). Es werden keine Cloud-Zugangsdaten benötigt – alle Daten
+kommen aus den Entitäten von ha-bambulab.
 
 ## Dienste
 
