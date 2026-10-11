@@ -21,11 +21,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .const import (
+    CONF_AMS_SLOT,
     CONF_HUMIDITY_SENSOR,
     CONF_LOW_STOCK_THRESHOLD,
     CONF_TOTAL_WEIGHT,
     DOMAIN,
     SUBENTRY_TYPE_SPOOL,
+    signal_ams_updated,
     signal_spool_updated,
 )
 from .boxes import box_subentry, effective_box_humidity_limits
@@ -62,16 +64,27 @@ async def async_setup_entry(
         # only happens at the hub, so drop any such entity left over.
         _async_remove_humidity_alert_entity(hass, subentry)
 
+        spool_entities: list[BinarySensorEntity] = []
         if subentry.data.get(CONF_LOW_STOCK_THRESHOLD) is not None:
-            async_add_entities([FilamentLowStockAlert(hass, entry, subentry)], config_subentry_id=subentry_id)
+            spool_entities.append(FilamentLowStockAlert(hass, entry, subentry))
+        if subentry.data.get(CONF_AMS_SLOT):
+            spool_entities.append(FilamentInPrinterSensor(hass, entry, subentry))
+        else:
+            _async_remove_entity(hass, f"{subentry.subentry_id}_in_printer")
+        if spool_entities:
+            async_add_entities(spool_entities, config_subentry_id=subentry_id)
+
+
+def _async_remove_entity(hass: HomeAssistant, unique_id: str) -> None:
+    """Remove a binary sensor from the registry that is no longer created."""
+    registry = er.async_get(hass)
+    if (entity_id := registry.async_get_entity_id("binary_sensor", DOMAIN, unique_id)) is not None:
+        registry.async_remove(entity_id)
 
 
 def _async_remove_humidity_alert_entity(hass: HomeAssistant, subentry: ConfigSubentry) -> None:
     """Remove a spool's own (legacy) humidity alert entity, superseded by its hub."""
-    registry = er.async_get(hass)
-    unique_id = f"{subentry.subentry_id}_humidity_alert"
-    if (entity_id := registry.async_get_entity_id("binary_sensor", DOMAIN, unique_id)) is not None:
-        registry.async_remove(entity_id)
+    _async_remove_entity(hass, f"{subentry.subentry_id}_humidity_alert")
 
 
 class FilamentHumidityAlert(BinarySensorEntity):
@@ -236,7 +249,7 @@ class FilamentLowStockAlert(BinarySensorEntity):
 
     def _recompute(self) -> None:
         total = self._subentry.data.get(CONF_TOTAL_WEIGHT)
-        remaining = self._entry.runtime_data[self._subentry.subentry_id].remaining_weight
+        remaining = self._entry.runtime_data.spools[self._subentry.subentry_id].remaining_weight
         self._percent = round(remaining / total * 100, 1) if total else None
         self._attr_is_on = self._percent is not None and self._percent < self._threshold
 
@@ -244,3 +257,54 @@ class FilamentLowStockAlert(BinarySensorEntity):
     def extra_state_attributes(self) -> dict[str, float | None]:
         """Return diagnostic attributes for the low-stock alert."""
         return {"remaining_percentage": self._percent, "threshold": self._threshold}
+
+
+class FilamentInPrinterSensor(BinarySensorEntity):
+    """Whether this spool is currently in its AMS slot (a Bambu Lab printer)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "in_printer"
+    _attr_icon = "mdi:printer-3d"
+    _attr_should_poll = False
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
+        self._entry = entry
+        self._subentry = subentry
+        self._attr_unique_id = f"{subentry.subentry_id}_in_printer"
+        self._attr_device_info = spool_device_info(hass, entry, subentry)
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the AMS slot's state."""
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_ams_updated(self._subentry.subentry_id), self._handle_update
+            )
+        )
+
+    @callback
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def _state(self):
+        return self._entry.runtime_data.ams.states.get(self._subentry.subentry_id)
+
+    @property
+    def available(self) -> bool:
+        """Unavailable while the slot sensor (the printer) is."""
+        return bool(self._state and self._state.available)
+
+    @property
+    def is_on(self) -> bool:
+        """Return True while this spool sits in its slot."""
+        return bool(self._state and self._state.in_printer)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | int | bool | None]:
+        """Return the slot and what the AMS reports."""
+        state = self._state
+        return {
+            "ams_slot": self._subentry.data.get(CONF_AMS_SLOT),
+            "ams_remaining_percent": state.remain if state else None,
+            "rfid_known": state.rfid_known if state else False,
+        }

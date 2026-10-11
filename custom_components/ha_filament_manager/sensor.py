@@ -94,7 +94,7 @@ class FilamentRemainingPercentageSensor(SensorEntity):
         total = self._subentry.data.get(CONF_TOTAL_WEIGHT)
         if not total:
             return None
-        remaining = self._entry.runtime_data[self._subentry.subentry_id].remaining_weight
+        remaining = self._entry.runtime_data.spools[self._subentry.subentry_id].remaining_weight
         return round(remaining / total * 100, 1)
 
 

@@ -11,9 +11,9 @@ import voluptuous as vol
 from homeassistant.components.number import NumberDeviceClass, NumberMode, RestoreNumber
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import UnitOfMass
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_platform
-from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
@@ -23,6 +23,7 @@ from .const import (
     SERVICE_CONSUME_FILAMENT,
     SERVICE_REFILL_SPOOL,
     SUBENTRY_TYPE_SPOOL,
+    signal_ams_remaining,
     signal_spool_updated,
 )
 from .entity import spool_device_info
@@ -76,16 +77,30 @@ class FilamentRemainingWeightNumber(RestoreNumber):
         if restored_value is None:
             restored_value = self._subentry.data.get(CONF_INITIAL_REMAINING_WEIGHT, self._attr_native_max_value)
 
-        self._attr_native_value = max(0, min(restored_value, self._attr_native_max_value))
-        self._entry.runtime_data[self._subentry.subentry_id].remaining_weight = self._attr_native_value
+        self._apply(restored_value, write_state=False)
+        # A spool coupled to an AMS slot may follow the AMS's remaining percentage.
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_ams_remaining(self._subentry.subentry_id), self._handle_ams_remaining
+            )
+        )
+
+    @callback
+    def _apply(self, value: float, *, write_state: bool = True) -> None:
+        self._attr_native_value = max(0, min(value, self._attr_native_max_value))
+        self._entry.runtime_data.spools[self._subentry.subentry_id].remaining_weight = self._attr_native_value
+        if write_state:
+            self.async_write_ha_state()
         async_dispatcher_send(self.hass, signal_spool_updated(self._subentry.subentry_id))
+
+    @callback
+    def _handle_ams_remaining(self, percent: float) -> None:
+        """Follow the AMS: its percentage refers to this spool's total weight."""
+        self._apply(round(self._attr_native_max_value * percent / 100))
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the remaining weight."""
-        self._attr_native_value = max(0, min(value, self._attr_native_max_value))
-        self._entry.runtime_data[self._subentry.subentry_id].remaining_weight = self._attr_native_value
-        self.async_write_ha_state()
-        async_dispatcher_send(self.hass, signal_spool_updated(self._subentry.subentry_id))
+        self._apply(value)
 
     async def async_consume(self, amount: float) -> None:
         """Subtract the given amount of used filament, in grams."""
@@ -95,3 +110,5 @@ class FilamentRemainingWeightNumber(RestoreNumber):
         """Reset the remaining weight, e.g. after mounting a fresh spool."""
         target = amount if amount is not None else self._attr_native_max_value
         await self.async_set_native_value(target)
+        # A fresh spool: the RFID learned for the old one no longer applies.
+        self._entry.runtime_data.ams.forget(self._subentry.subentry_id)
