@@ -22,6 +22,9 @@ CONF_PERSISTENT_NOTIFICATION: Final = "persistent_notification"
 CONF_SPOOL_LIMIT: Final = "spool_limit"
 # A spool's AMS slot: a tray sensor of the Bambu Lab printer integration (ha-bambulab).
 CONF_AMS_SLOT: Final = "ams_slot"
+CONF_BOX: Final = "box"
+# hass.data[DOMAIN] key: entry ids whose reload-on-change is held back (see move.py)
+MOVING: Final = "moving"
 CONF_AMS_SYNC: Final = "ams_sync_remaining"
 
 # A config entry is a hub, and a hub *is* one filament box (or shelf): its

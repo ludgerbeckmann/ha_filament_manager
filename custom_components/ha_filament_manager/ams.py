@@ -214,3 +214,19 @@ class AmsTracker:
                 if subentry_id in self._slots
             }
         )
+
+
+async def async_move_learned_rfid(
+    hass: HomeAssistant, source: ConfigEntry, target: ConfigEntry, subentry_id: str
+) -> None:
+    """Hand the RFID learned for a spool over to the hub it moves to."""
+    source_store: Store[dict[str, dict[str, str]]] = Store(hass, 1, f"{DOMAIN}.ams_{source.entry_id}")
+    records = await source_store.async_load() or {}
+    record = records.pop(subentry_id, None)
+    if record is None:
+        return
+    await source_store.async_save(records)
+    target_store: Store[dict[str, dict[str, str]]] = Store(hass, 1, f"{DOMAIN}.ams_{target.entry_id}")
+    target_records = await target_store.async_load() or {}
+    target_records[subentry_id] = record
+    await target_store.async_save(target_records)

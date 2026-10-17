@@ -122,6 +122,15 @@ weitere Spule anlegen. Auf dem Dashboard werden die Spulen eines Hubs
 gruppiert unter einer gemeinsamen Kopfzeile mit Boxname und Luftfeuchtigkeit
 angezeigt (siehe "Dashboard-Karte" unten).
 
+### Spule in eine andere Box verschieben
+
+Gibt es mehr als eine Filamentbox, erscheint beim Bearbeiten einer Spule
+(Zahnrad-Symbol) zusätzlich das Feld **Filamentbox**. Wählst du dort eine
+andere Box, wird die Spule dorthin verschoben. Entitäten (inkl. Entity-IDs),
+Verlauf, Restmenge, Bereich und die gemerkte AMS-RFID bleiben dabei erhalten –
+es ist dieselbe Spule, nur in einer anderen Box. Eine volle Box (maximale
+Spulenanzahl) nimmt keine Spule mehr auf.
+
 ## Entitäten
 
 | Entität | Beschreibung |

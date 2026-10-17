@@ -31,6 +31,8 @@ from .const import (
     CARD_VERSION,
     CONF_INITIAL_REMAINING_WEIGHT,
     CONF_TOTAL_WEIGHT,
+    DOMAIN,
+    MOVING,
     SUBENTRY_TYPE_SPOOL,
 )
 
@@ -124,6 +126,8 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     or the rename dialog) is mirrored onto it first; that update calls this
     listener again, which then reloads.
     """
+    if entry.entry_id in hass.data.get(DOMAIN, {}).get(MOVING, ()):
+        return  # a spool is being moved into this hub, which reloads afterwards
     box = box_subentry(entry)
     if box is not None and box.title != box_title(entry.title):
         hass.config_entries.async_update_subentry(entry, box, title=box_title(entry.title))

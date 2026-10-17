@@ -959,3 +959,121 @@ async def test_in_printer_entity_is_removed_when_the_slot_is_removed(hass: HomeA
     assert registry.async_get(IN_PRINTER) is None
     assert hass.states.get(IN_PRINTER) is None
 
+
+
+# --- moving a spool to another box --------------------------------------------
+
+
+def _reconfigure_input(**overrides):
+    return {
+        "name": "Test Spool",
+        CONF_MATERIAL: "PLA",
+        CONF_COLOR: "Black",
+        "manufacturer": "",
+        CONF_DIAMETER: "1.75",
+        CONF_TOTAL_WEIGHT: 1000,
+        **overrides,
+    }
+
+
+async def _start_reconfigure(hass: HomeAssistant, entry: MockConfigEntry, subentry: ConfigSubentry):
+    return await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_SPOOL),
+        context={"source": "reconfigure", "subentry_id": subentry.subentry_id},
+    )
+
+
+async def test_box_can_only_be_chosen_with_more_than_one_box(hass: HomeAssistant) -> None:
+    first = await _setup_entry(hass)
+    result = await _start_reconfigure(hass, first, _subentry_by_title(first, "Test Spool"))
+    assert "box" not in [str(key) for key in result["data_schema"].schema]
+    hass.config_entries.subentries.async_abort(result["flow_id"])
+
+    second = await _setup_hub(hass, title="A Box")
+    result = await _start_reconfigure(hass, first, _subentry_by_title(first, "Test Spool"))
+    assert _schema_default(result["data_schema"], "box") == first.entry_id
+    assert _schema_options(result["data_schema"], "box") == [second.entry_id, first.entry_id]  # by name
+
+
+async def test_moving_a_spool_keeps_its_entities_device_and_state(hass: HomeAssistant) -> None:
+    source = await _setup_entry(hass)
+    target = await _setup_hub(hass, title="Second Box")
+    subentry = _subentry_by_title(source, "Test Spool")
+    subentry_id = subentry.subentry_id
+
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": NUMBER_ENTITY, "value": 321}, blocking=True
+    )
+    ent_reg = er.async_get(hass)
+    entity_ids = {e.entity_id for e in er.async_entries_for_config_entry(ent_reg, source.entry_id) if e.config_subentry_id == subentry_id}
+    assert NUMBER_ENTITY in entity_ids
+
+    result = await _start_reconfigure(hass, source, subentry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], _reconfigure_input(name="Renamed Spool", box=target.entry_id)
+    )
+    assert result["type"] == "abort"
+    assert result["reason"] == "moved"
+    await hass.async_block_till_done()
+
+    # The spool left the source box and joined the target under the same id.
+    assert subentry_id not in source.subentries
+    moved = target.subentries[subentry_id]
+    assert moved.title == "Renamed Spool"
+
+    # Same entities, now owned by the target; state and history carried over.
+    for entity_id in entity_ids:
+        entry = ent_reg.async_get(entity_id)
+        assert entry is not None
+        assert entry.config_entry_id == target.entry_id
+        assert entry.config_subentry_id == subentry_id
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 321
+
+    # The device stayed (with its name), is linked to the target and hangs below its box.
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_device_by_identifier((DOMAIN, subentry_id), target.entry_id)
+    assert device is not None
+    assert set(device.config_entries) == {target.entry_id}
+    box_device = dev_reg.async_get_device_by_identifier((DOMAIN, target.entry_id), target.entry_id)
+    assert device.via_device_id == box_device.id
+
+    # Both boxes count their spools correctly again.
+    assert hass.states.get("sensor.second_box_spools").state == "1"
+    assert hass.states.get(SPOOL_COUNT_ENTITY).state == "0"
+
+
+async def test_moving_a_spool_is_refused_for_a_full_box(hass: HomeAssistant) -> None:
+    source = await _setup_entry(hass)
+    target = await _setup_hub(
+        hass, title="Full Box", subentries_data=[_spool_subentry("Other")], **{CONF_SPOOL_LIMIT: 1}
+    )
+    subentry = _subentry_by_title(source, "Test Spool")
+
+    result = await _start_reconfigure(hass, source, subentry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], _reconfigure_input(box=target.entry_id)
+    )
+    assert result["type"] == "form"
+    assert result["errors"] == {"box": "box_full"}
+    assert subentry.subentry_id in source.subentries
+
+
+async def test_moving_a_spool_hands_its_learned_rfid_to_the_new_box(hass: HomeAssistant) -> None:
+    _set_slot(hass, rfid=RFID_A)
+    source = await _setup_ams_spool(hass)
+    target = await _setup_hub(hass, title="Second Box")
+    assert hass.states.get(IN_PRINTER).state == "on"
+    await hass.async_block_till_done()
+
+    result = await _start_reconfigure(hass, source, _subentry_by_title(source, "Test Spool"))
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], _reconfigure_input(**{CONF_AMS_SLOT: SLOT, "box": target.entry_id})
+    )
+    assert result["reason"] == "moved"
+    await hass.async_block_till_done()
+
+    # Still the same spool in the printer; a different RFID in the slot is still not it.
+    assert hass.states.get(IN_PRINTER).state == "on"
+    _set_slot(hass, rfid=RFID_B)
+    await hass.async_block_till_done()
+    assert hass.states.get(IN_PRINTER).state == "off"
