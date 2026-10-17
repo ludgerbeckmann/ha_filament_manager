@@ -19,7 +19,9 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import (
+    SOURCE_IGNORE,
     ConfigEntry,
+    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
     ConfigSubentryData,
@@ -30,8 +32,10 @@ from homeassistant.helpers import selector
 
 from .ams import slot_entities
 from .boxes import box_subentry, box_title, spool_subentries
+from .move import async_move_spool
 from .const import (
     CONF_AMS_SLOT,
+    CONF_BOX,
     CONF_AMS_SYNC,
     COLOR_OPTIONS,
     CONF_COLOR,
@@ -244,12 +248,27 @@ def _hub_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
     return fields
 
 
-def _build_reconfigure_schema(defaults: dict[str, Any], slots: list[str]) -> vol.Schema:
-    """Combined identity + details schema, used by the (single-step) spool reconfigure flow."""
+def _build_reconfigure_schema(
+    defaults: dict[str, Any], slots: list[str], boxes: list[ConfigEntry] | None = None
+) -> vol.Schema:
+    """Combined identity + details schema, used by the (single-step) spool reconfigure flow.
+
+    With more than one box around, the spool's box can be changed as well.
+    """
     fields = {
         **_identity_fields(defaults, include_name=True),
         **_details_fields(defaults, slots, include_initial=False),
     }
+    if boxes and len(boxes) > 1:
+        fields[vol.Required(CONF_BOX, default=defaults[CONF_BOX])] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(value=box.entry_id, label=box.title)
+                    for box in sorted(boxes, key=lambda b: b.title.casefold())
+                ],
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
     return vol.Schema(fields)
 
 
@@ -375,13 +394,27 @@ class SpoolSubentryFlowHandler(ConfigSubentryFlow):
         entry = self._get_entry()
         subentry = self._get_reconfigure_subentry()
 
+        boxes = [
+            box for box in self.hass.config_entries.async_entries(DOMAIN) if box.source != SOURCE_IGNORE
+        ]
+
         if user_input is not None:
             name = user_input.pop(CONF_NAME, "").strip()
+            target = self.hass.config_entries.async_get_entry(user_input.pop(CONF_BOX, entry.entry_id))
             if not name:
                 errors["name"] = "name_required"
-            else:
+            elif target is None or target.entry_id == entry.entry_id:
                 return self.async_update_and_abort(entry, subentry, title=name, data=user_input)
+            elif target.state is not ConfigEntryState.LOADED:
+                errors[CONF_BOX] = "box_unavailable"
+            elif (limit := target.data.get(CONF_SPOOL_LIMIT)) and len(spool_subentries(target)) >= limit:
+                errors[CONF_BOX] = "box_full"
+            else:
+                await async_move_spool(self.hass, entry, subentry, target, title=name, data=user_input)
+                return self.async_abort(
+                    reason="moved", description_placeholders={"box": target.title, "spool": name}
+                )
 
-        defaults = {CONF_NAME: subentry.title, **subentry.data}
-        schema = _build_reconfigure_schema(defaults, slot_entities(self.hass))
+        defaults = {CONF_NAME: subentry.title, CONF_BOX: entry.entry_id, **subentry.data}
+        schema = _build_reconfigure_schema(defaults, slot_entities(self.hass), boxes)
         return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)

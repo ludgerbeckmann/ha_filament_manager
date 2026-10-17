@@ -89,17 +89,21 @@
             "ams_slot": "AMS slot (optional, Bambu Lab printer)",
             "ams_sync_remaining": "Follow the AMS remaining amount (spools with RFID only)",
             "notify_targets": "Notify (optional)",
-            "persistent_notification": "Show a persistent notification"
+            "persistent_notification": "Show a persistent notification",
+            "box": "Filament box (changing it moves the spool)"
           }
         }
       },
       "error": {
         "name_required": "Please enter a name for the spool.",
-        "remaining_exceeds_total": "The remaining weight cannot be greater than the total weight."
+        "remaining_exceeds_total": "The remaining weight cannot be greater than the total weight.",
+        "box_unavailable": "The spool cannot be moved: that filament box is not available right now.",
+        "box_full": "That filament box is already full."
       },
       "abort": {
         "reconfigure_successful": "Reconfiguration successful.",
-        "box_full": "This filament box is already full."
+        "box_full": "This filament box is already full.",
+        "moved": "The spool \"{spool}\" now lives in \"{box}\". Its entities and history were kept."
       }
     },
     "box": {

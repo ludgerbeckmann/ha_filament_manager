@@ -89,17 +89,21 @@
             "ams_slot": "AMS-Slot (optional, Bambu-Lab-Drucker)",
             "ams_sync_remaining": "Restmenge aus dem AMS übernehmen (nur Spulen mit RFID)",
             "notify_targets": "Benachrichtigen (optional)",
-            "persistent_notification": "Dauerhafte Benachrichtigung anzeigen"
+            "persistent_notification": "Dauerhafte Benachrichtigung anzeigen",
+            "box": "Filamentbox (Änderung verschiebt die Spule)"
           }
         }
       },
       "error": {
         "name_required": "Bitte gib einen Namen für die Spule ein.",
-        "remaining_exceeds_total": "Die Restmenge darf nicht größer als das Gesamtgewicht sein."
+        "remaining_exceeds_total": "Die Restmenge darf nicht größer als das Gesamtgewicht sein.",
+        "box_unavailable": "Die Spule kann nicht verschoben werden: Diese Filamentbox ist gerade nicht verfügbar.",
+        "box_full": "Diese Filamentbox ist bereits voll."
       },
       "abort": {
         "reconfigure_successful": "Neukonfiguration erfolgreich.",
-        "box_full": "Diese Filamentbox ist bereits voll."
+        "box_full": "Diese Filamentbox ist bereits voll.",
+        "moved": "Die Spule „{spool}“ liegt jetzt in „{box}“. Entitäten und Verlauf wurden übernommen."
       }
     },
     "box": {
