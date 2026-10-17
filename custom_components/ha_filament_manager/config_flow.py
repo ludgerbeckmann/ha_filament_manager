@@ -19,7 +19,8 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import (
-    SOURCE_IGNORE,
+    SOURCE_REAUTH,
+    SOURCE_RECONFIGURE,
     ConfigEntry,
     ConfigEntryState,
     ConfigFlow,
@@ -31,11 +32,31 @@ from homeassistant.config_entries import (
 from homeassistant.helpers import selector
 
 from .ams import slot_entities
+from .cloud import (
+    AuthFailed,
+    BambuCloudClient,
+    BambuCloudError,
+    CloudflareBlocked,
+    CloudSpool,
+    CodeIncorrect,
+    EmailCodeRequired,
+    TfaRequired,
+    cloud_spools,
+    hub_entries,
+    is_cloud_entry,
+)
 from .boxes import box_subentry, box_title, spool_subentries
 from .move import async_move_spool
 from .const import (
     CONF_AMS_SLOT,
+    CLOUD_REGIONS,
     CONF_BOX,
+    CONF_CLOUD,
+    CONF_CLOUD_EMAIL,
+    CONF_CLOUD_REGION,
+    CONF_CLOUD_SPOOL,
+    CONF_CLOUD_SYNC,
+    CONF_CLOUD_TOKEN,
     CONF_AMS_SYNC,
     COLOR_OPTIONS,
     CONF_COLOR,
@@ -190,8 +211,42 @@ def _ams_fields(defaults: dict[str, Any], slots: list[str]) -> dict[Any, Any]:
     }
 
 
+def _cloud_fields(defaults: dict[str, Any], library: dict[int, CloudSpool] | None) -> dict[Any, Any]:
+    """The spool's Bambu cloud spool - only when a cloud account is connected and answering.
+
+    "–" (empty) means automatic: matched by the RFID the AMS coupling learned.
+    """
+    if not library:
+        return {}
+    chosen = str(defaults.get(CONF_CLOUD_SPOOL) or "")
+    options = [selector.SelectOptionDict(value="", label="–")]
+    options += [
+        selector.SelectOptionDict(value=str(spool.id), label=spool.label)
+        for spool in sorted(library.values(), key=lambda spool: spool.name.casefold())
+    ]
+    if chosen and chosen not in {option["value"] for option in options}:
+        options.append(selector.SelectOptionDict(value=chosen, label=f"#{chosen}"))  # gone from the cloud
+    return {
+        vol.Optional(CONF_CLOUD_SPOOL, default=chosen): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=options, mode=selector.SelectSelectorMode.DROPDOWN)
+        ),
+        vol.Optional(CONF_CLOUD_SYNC, default=defaults.get(CONF_CLOUD_SYNC, True)): selector.BooleanSelector(),
+    }
+
+
+def _clean_cloud_choice(data: dict[str, Any]) -> dict[str, Any]:
+    """An empty cloud spool means "automatic": do not store it."""
+    if not data.get(CONF_CLOUD_SPOOL):
+        data.pop(CONF_CLOUD_SPOOL, None)
+    return data
+
+
 def _details_fields(
-    defaults: dict[str, Any], slots: list[str], *, include_initial: bool
+    defaults: dict[str, Any],
+    slots: list[str],
+    library: dict[int, CloudSpool] | None = None,
+    *,
+    include_initial: bool,
 ) -> dict[Any, Any]:
     fields: dict[Any, Any] = {}
 
@@ -225,6 +280,7 @@ def _details_fields(
     )
 
     fields.update(_ams_fields(defaults, slots))
+    fields.update(_cloud_fields(defaults, library))
     fields.update(_notify_fields(defaults))
 
     return fields
@@ -249,7 +305,10 @@ def _hub_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
 
 
 def _build_reconfigure_schema(
-    defaults: dict[str, Any], slots: list[str], boxes: list[ConfigEntry] | None = None
+    defaults: dict[str, Any],
+    slots: list[str],
+    boxes: list[ConfigEntry] | None = None,
+    library: dict[int, CloudSpool] | None = None,
 ) -> vol.Schema:
     """Combined identity + details schema, used by the (single-step) spool reconfigure flow.
 
@@ -257,7 +316,7 @@ def _build_reconfigure_schema(
     """
     fields = {
         **_identity_fields(defaults, include_name=True),
-        **_details_fields(defaults, slots, include_initial=False),
+        **_details_fields(defaults, slots, library, include_initial=False),
     }
     if boxes and len(boxes) > 1:
         fields[vol.Required(CONF_BOX, default=defaults[CONF_BOX])] = selector.SelectSelector(
@@ -277,7 +336,19 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    def __init__(self) -> None:
+        self._client: BambuCloudClient | None = None
+        self._region = CLOUD_REGIONS[0]
+        self._email = ""
+        self._tfa_key = ""
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Offer a new box or - as long as none is connected - the Bambu cloud account."""
+        if any(is_cloud_entry(entry) for entry in self.hass.config_entries.async_entries(DOMAIN)):
+            return await self.async_step_hub()
+        return self.async_show_menu(step_id="user", menu_options=["hub", "cloud"])
+
+    async def async_step_hub(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Create a hub (filament box). Its spools are added as subentries afterwards."""
         errors: dict[str, str] = {}
 
@@ -302,13 +373,130 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
 
         return self.async_show_form(
-            step_id="user", data_schema=vol.Schema(_hub_fields({})), errors=errors
+            step_id="hub", data_schema=vol.Schema(_hub_fields({})), errors=errors
         )
+
+    # --- optional Bambu cloud account (read-only comparison of the filament library) ---
+
+    async def async_step_cloud(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Log in to the Bambu cloud with region, e-mail and password (the password is not stored)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._region = user_input[CONF_CLOUD_REGION]
+            self._email = user_input[CONF_CLOUD_EMAIL].strip()
+            self._client = BambuCloudClient(self._region)
+            try:
+                await self.hass.async_add_executor_job(
+                    self._client.login, self._email, user_input["password"]
+                )
+            except EmailCodeRequired:
+                return await self.async_step_cloud_code()
+            except TfaRequired as err:
+                self._tfa_key = err.tfa_key
+                return await self.async_step_cloud_tfa()
+            except AuthFailed:
+                errors["base"] = "invalid_auth"
+            except CloudflareBlocked:
+                errors["base"] = "blocked"
+            except (BambuCloudError, ImportError):
+                errors["base"] = "cannot_connect"
+            else:
+                return await self._async_finish_cloud()
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_CLOUD_REGION, default=self._region): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=CLOUD_REGIONS,
+                        translation_key="cloud_region",
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(CONF_CLOUD_EMAIL, default=self._email): selector.TextSelector(),
+                vol.Required("password"): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                ),
+            }
+        )
+        return self.async_show_form(step_id="cloud", data_schema=schema, errors=errors)
+
+    async def async_step_cloud_code(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Bambu has sent a verification code by e-mail (or SMS)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                await self.hass.async_add_executor_job(
+                    self._client.login_with_code, self._email, user_input["code"].strip()
+                )
+            except CodeIncorrect:
+                errors["base"] = "invalid_code"
+            except CloudflareBlocked:
+                errors["base"] = "blocked"
+            except BambuCloudError:
+                errors["base"] = "cannot_connect"
+            else:
+                return await self._async_finish_cloud()
+        return self.async_show_form(
+            step_id="cloud_code",
+            data_schema=vol.Schema({vol.Required("code"): selector.TextSelector()}),
+            description_placeholders={"email": self._email},
+            errors=errors,
+        )
+
+    async def async_step_cloud_tfa(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """The account uses two-factor authentication."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                await self.hass.async_add_executor_job(
+                    self._client.login_with_tfa, self._tfa_key, user_input["code"].strip()
+                )
+            except CodeIncorrect:
+                errors["base"] = "invalid_code"
+            except CloudflareBlocked:
+                errors["base"] = "blocked"
+            except BambuCloudError:
+                errors["base"] = "cannot_connect"
+            else:
+                return await self._async_finish_cloud()
+        return self.async_show_form(
+            step_id="cloud_tfa",
+            data_schema=vol.Schema({vol.Required("code"): selector.TextSelector()}),
+            errors=errors,
+        )
+
+    async def _async_finish_cloud(self) -> ConfigFlowResult:
+        """The client holds a valid token: create the account entry or refresh its token."""
+        token = self._client.token
+        if self.source in (SOURCE_REAUTH, SOURCE_RECONFIGURE):
+            entry = self._get_reauth_entry() if self.source == SOURCE_REAUTH else self._get_reconfigure_entry()
+            return self.async_update_reload_and_abort(entry, data_updates={CONF_CLOUD_TOKEN: token})
+        await self.async_set_unique_id(f"cloud-{self._region}-{self._email.lower()}")
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(
+            title=f"Bambu Cloud ({self._email})",
+            data={
+                CONF_CLOUD: True,
+                CONF_CLOUD_REGION: self._region,
+                CONF_CLOUD_EMAIL: self._email,
+                CONF_CLOUD_TOKEN: token,
+            },
+        )
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
+        """The cloud token has expired: log in again."""
+        self._region = entry_data.get(CONF_CLOUD_REGION, self._region)
+        self._email = entry_data.get(CONF_CLOUD_EMAIL, "")
+        return await self.async_step_cloud()
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Edit the hub's (filament box's) name, humidity, notification and spool-limit settings."""
         errors: dict[str, str] = {}
         entry = self._get_reconfigure_entry()
+        if is_cloud_entry(entry):  # the cloud account has nothing to set but its login
+            self._region = entry.data[CONF_CLOUD_REGION]
+            self._email = entry.data[CONF_CLOUD_EMAIL]
+            return await self.async_step_cloud()
 
         if user_input is not None:
             name = user_input.pop(CONF_NAME, "").strip()
@@ -329,6 +517,8 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
         cls, config_entry: ConfigEntry
     ) -> dict[str, type[ConfigSubentryFlow]]:
         """Return the subentry types a hub supports: just spools (the hub itself is the box)."""
+        if is_cloud_entry(config_entry):
+            return {}
         return {SUBENTRY_TYPE_SPOOL: SpoolSubentryFlowHandler}
 
 
@@ -366,10 +556,12 @@ class SpoolSubentryFlowHandler(ConfigSubentryFlow):
                 errors["base"] = "remaining_exceeds_total"
             else:
                 user_input[CONF_INITIAL_REMAINING_WEIGHT] = initial_remaining
-                self._spool_data = {**self._spool_data, **user_input}
+                self._spool_data = _clean_cloud_choice({**self._spool_data, **user_input})
                 return await self.async_step_name()
 
-        schema = vol.Schema(_details_fields(self._spool_data, slot_entities(self.hass), include_initial=True))
+        schema = vol.Schema(_details_fields(
+            self._spool_data, slot_entities(self.hass), cloud_spools(self.hass), include_initial=True
+        ))
         return self.async_show_form(step_id="details", data_schema=schema, errors=errors)
 
     async def async_step_name(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -394,11 +586,10 @@ class SpoolSubentryFlowHandler(ConfigSubentryFlow):
         entry = self._get_entry()
         subentry = self._get_reconfigure_subentry()
 
-        boxes = [
-            box for box in self.hass.config_entries.async_entries(DOMAIN) if box.source != SOURCE_IGNORE
-        ]
+        boxes = hub_entries(self.hass)
 
         if user_input is not None:
+            _clean_cloud_choice(user_input)
             name = user_input.pop(CONF_NAME, "").strip()
             target = self.hass.config_entries.async_get_entry(user_input.pop(CONF_BOX, entry.entry_id))
             if not name:
@@ -416,5 +607,5 @@ class SpoolSubentryFlowHandler(ConfigSubentryFlow):
                 )
 
         defaults = {CONF_NAME: subentry.title, CONF_BOX: entry.entry_id, **subentry.data}
-        schema = _build_reconfigure_schema(defaults, slot_entities(self.hass), boxes)
+        schema = _build_reconfigure_schema(defaults, slot_entities(self.hass), boxes, cloud_spools(self.hass))
         return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)

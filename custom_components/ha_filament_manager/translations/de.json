@@ -5,6 +5,14 @@
     },
     "step": {
       "user": {
+        "title": "Filament Manager",
+        "description": "Was möchtest du hinzufügen?",
+        "menu_options": {
+          "hub": "Filamentbox hinzufügen",
+          "cloud": "Bambu-Cloud-Konto verbinden (optional)"
+        }
+      },
+      "hub": {
         "title": "Filamentbox hinzufügen",
         "description": "Jeder Hub ist eine Filamentbox (oder ein Regal); die Spulen werden anschließend über den Eintrag des Hubs hinzugefügt (Schaltfläche „+ Hinzufügen“). Grenzwert und Verzögerung leer lassen, um die Werte des empfindlichsten in der Box gelagerten Materials zu verwenden; die maximale Spulenanzahl leer lassen für keine Begrenzung.",
         "data": {
@@ -29,13 +37,42 @@
           "persistent_notification": "Dauerhafte Benachrichtigung anzeigen",
           "spool_limit": "Maximale Spulenanzahl (leer = unbegrenzt)"
         }
+      },
+      "cloud": {
+        "title": "Bambu-Cloud-Konto",
+        "description": "Optional: liest deine Bambu-Filamentbibliothek (nur lesend), damit Spulen deren Restmenge übernehmen können. Antwortet die Cloud nicht, läuft alles wie bisher weiter. Dein Passwort wird nicht gespeichert, nur das Login-Token.",
+        "data": {
+          "region": "Region",
+          "email": "E-Mail oder Telefon",
+          "password": "Passwort"
+        }
+      },
+      "cloud_code": {
+        "title": "Bestätigungscode",
+        "description": "Bambu hat einen Code an {email} geschickt.",
+        "data": {
+          "code": "Code"
+        }
+      },
+      "cloud_tfa": {
+        "title": "Zwei-Faktor-Code",
+        "description": "Gib den Code deiner Authenticator-App ein.",
+        "data": {
+          "code": "Code"
+        }
       }
     },
     "error": {
-      "name_required": "Bitte gib einen Namen für die Filamentbox ein."
+      "name_required": "Bitte gib einen Namen für die Filamentbox ein.",
+      "invalid_auth": "Anmeldung abgelehnt – E-Mail und Passwort prüfen.",
+      "blocked": "Die Bambu-Cloud hat die Anfrage blockiert. Bitte später erneut versuchen.",
+      "cannot_connect": "Die Bambu-Cloud ist nicht erreichbar.",
+      "invalid_code": "Der Code wurde nicht akzeptiert."
     },
     "abort": {
-      "reconfigure_successful": "Neukonfiguration erfolgreich."
+      "reconfigure_successful": "Neukonfiguration erfolgreich.",
+      "already_configured": "Dieses Bambu-Konto ist bereits verbunden.",
+      "reauth_successful": "Erneut angemeldet."
     }
   },
   "config_subentries": {
@@ -65,7 +102,9 @@
             "ams_slot": "AMS-Slot (optional, Bambu-Lab-Drucker)",
             "ams_sync_remaining": "Restmenge aus dem AMS übernehmen (nur Spulen mit RFID)",
             "notify_targets": "Benachrichtigen (optional)",
-            "persistent_notification": "Dauerhafte Benachrichtigung anzeigen"
+            "persistent_notification": "Dauerhafte Benachrichtigung anzeigen",
+            "cloud_spool": "Bambu-Cloud-Spule (– = automatisch per RFID)",
+            "cloud_sync_remaining": "Restmenge aus der Cloud übernehmen"
           }
         },
         "name": {
@@ -90,7 +129,9 @@
             "ams_sync_remaining": "Restmenge aus dem AMS übernehmen (nur Spulen mit RFID)",
             "notify_targets": "Benachrichtigen (optional)",
             "persistent_notification": "Dauerhafte Benachrichtigung anzeigen",
-            "box": "Filamentbox (Änderung verschiebt die Spule)"
+            "box": "Filamentbox (Änderung verschiebt die Spule)",
+            "cloud_spool": "Bambu-Cloud-Spule (– = automatisch per RFID)",
+            "cloud_sync_remaining": "Restmenge aus der Cloud übernehmen"
           }
         }
       },
@@ -169,6 +210,14 @@
           "name": "Menge",
           "description": "Neue Restmenge in Gramm. Wenn leer, wird auf das Gesamtgewicht zurückgesetzt."
         }
+      }
+    }
+  },
+  "selector": {
+    "cloud_region": {
+      "options": {
+        "global": "Global",
+        "china": "China"
       }
     }
   }

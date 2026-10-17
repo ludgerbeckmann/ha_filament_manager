@@ -166,6 +166,10 @@ class AmsTracker:
             unsubscribe()
         self._unsubscribe.clear()
 
+    def learned_rfid(self, subentry_id: str) -> str | None:
+        """The RFID learned for a spool, if any."""
+        return self._learned.get(subentry_id)
+
     @callback
     def forget(self, subentry_id: str) -> None:
         """Forget the learned RFID, e.g. after a new spool replaced the old one."""
