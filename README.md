@@ -167,6 +167,37 @@ Die Idee, AMS-Slots auszulesen, stammt aus
 © 2026 Timmes123). Es werden keine Cloud-Zugangsdaten benötigt – alle Daten
 kommen aus den Entitäten von ha-bambulab.
 
+## Abgleich mit der Bambu-Cloud (optional)
+
+Bambu Studio und Bambu Handy führen eine Filamentbibliothek in der Bambu-Cloud.
+Der Filament Manager kann sie **nur lesend** abfragen, damit Spulen deren
+Restmenge übernehmen. Die Schnittstelle ist inoffiziell: Funktioniert sie
+nicht (Cloud nicht erreichbar, von Bambu blockiert, Token abgelaufen), bleiben
+alle Werte wie sie sind und alles läuft wie bisher weiter – es wird nie etwas
+in die Cloud geschrieben.
+
+1. *Einstellungen → Geräte & Dienste → Integration hinzufügen → Filament
+   Manager → **Bambu-Cloud-Konto verbinden*** (Region, E-Mail, Passwort; ggf.
+   Bestätigungscode oder Zwei-Faktor-Code). Das Passwort wird nicht gespeichert,
+   nur das Login-Token. Es läuft nach ca. 90 Tagen ab – Home Assistant bittet
+   dann um eine erneute Anmeldung.
+2. Pro Spule erscheinen im Bearbeiten-Dialog das Feld **Bambu-Cloud-Spule** und
+   die Option **Restmenge aus der Cloud übernehmen** (Standard an):
+   - Eine gewählte Cloud-Spule wird fest zugeordnet.
+   - Bleibt das Feld auf „–“, wird automatisch zugeordnet: über die RFID, die
+     der Filament Manager vom AMS gelernt hat (siehe oben).
+3. Die Restmenge wird beim ersten Zuordnen übernommen und danach immer, wenn
+   die Cloud einen neuen Wert meldet (Abfrage alle 30 Minuten) – nicht bei
+   jedem Start, ein von Hand gesetzter Wert bleibt also bis zur nächsten
+   Änderung in der Cloud stehen. Die zugeordnete Cloud-Spule steht als Attribut
+   `cloud_spool` an der Restmengen-Entität.
+
+Hinweise: Die Cloud antwortet nur browserähnlichen Clients, deshalb braucht die
+Integration das Paket `curl_cffi` (wird von Home Assistant automatisch
+installiert). Login und Endpunkte folgen
+[Bambu Filaments](https://github.com/Timmes123/ha-bambu-filaments) (MIT,
+© 2026 Timmes123).
+
 ## Dienste
 
 - `ha_filament_manager.consume_filament` – reduziert die Restmenge einer Spule

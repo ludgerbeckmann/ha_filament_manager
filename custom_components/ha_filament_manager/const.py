@@ -23,6 +23,17 @@ CONF_SPOOL_LIMIT: Final = "spool_limit"
 # A spool's AMS slot: a tray sensor of the Bambu Lab printer integration (ha-bambulab).
 CONF_AMS_SLOT: Final = "ams_slot"
 CONF_BOX: Final = "box"
+# Bambu cloud account (a config entry of its own, next to the hubs)
+CONF_CLOUD: Final = "cloud"
+CONF_CLOUD_REGION: Final = "region"
+CONF_CLOUD_EMAIL: Final = "email"
+CONF_CLOUD_TOKEN: Final = "token"
+CONF_CLOUD_SPOOL: Final = "cloud_spool"
+CONF_CLOUD_SYNC: Final = "cloud_sync_remaining"
+CLOUD_REGIONS: Final = ["global", "china"]
+CLOUD_SCAN_MINUTES: Final = 30
+SIGNAL_CLOUD_UPDATED: Final = f"{DOMAIN}_cloud_updated"
+
 # hass.data[DOMAIN] key: entry ids whose reload-on-change is held back (see move.py)
 MOVING: Final = "moving"
 CONF_AMS_SYNC: Final = "ams_sync_remaining"
@@ -212,3 +223,13 @@ def signal_ams_remaining(subentry_id: str) -> str:
 def signal_spool_updated(subentry_id: str) -> str:
     """Return the dispatcher signal name used for a spool's live updates."""
     return f"{DOMAIN}_{subentry_id}_updated"
+
+
+def signal_cloud_remaining(subentry_id: str) -> str:
+    """Return the dispatcher signal name for a new cloud remaining percentage of a spool."""
+    return f"{DOMAIN}_{subentry_id}_cloud_remaining"
+
+
+def signal_cloud_matched(subentry_id: str) -> str:
+    """Return the dispatcher signal name for changes of a spool's matched cloud spool."""
+    return f"{DOMAIN}_{subentry_id}_cloud_matched"

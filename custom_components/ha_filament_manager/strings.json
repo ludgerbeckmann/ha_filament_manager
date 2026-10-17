@@ -5,6 +5,14 @@
     },
     "step": {
       "user": {
+        "title": "Filament Manager",
+        "description": "What do you want to add?",
+        "menu_options": {
+          "hub": "Add a filament box",
+          "cloud": "Connect Bambu cloud account (optional)"
+        }
+      },
+      "hub": {
         "title": "Add a filament box",
         "description": "Every hub is one filament box (or shelf); its spools are added afterwards from the hub's entry (the \"+ Add\" button). Leave the humidity limit and delay empty to use the values of the most sensitive material stored in the box; leave the maximum number of spools empty for no limit.",
         "data": {
@@ -29,13 +37,42 @@
           "persistent_notification": "Show a persistent notification",
           "spool_limit": "Maximum number of spools (empty = unlimited)"
         }
+      },
+      "cloud": {
+        "title": "Bambu cloud account",
+        "description": "Optional: reads your Bambu filament library (read-only) so spools can follow its remaining amount. If the cloud does not answer, everything keeps working as before. Your password is not stored, only the login token.",
+        "data": {
+          "region": "Region",
+          "email": "E-mail or phone",
+          "password": "Password"
+        }
+      },
+      "cloud_code": {
+        "title": "Verification code",
+        "description": "Bambu has sent a code to {email}.",
+        "data": {
+          "code": "Code"
+        }
+      },
+      "cloud_tfa": {
+        "title": "Two-factor code",
+        "description": "Enter the code of your authenticator app.",
+        "data": {
+          "code": "Code"
+        }
       }
     },
     "error": {
-      "name_required": "Please enter a name for the filament box."
+      "name_required": "Please enter a name for the filament box.",
+      "invalid_auth": "Login rejected - check e-mail and password.",
+      "blocked": "The Bambu cloud blocked the request. Try again later.",
+      "cannot_connect": "Could not reach the Bambu cloud.",
+      "invalid_code": "The code was not accepted."
     },
     "abort": {
-      "reconfigure_successful": "Reconfiguration successful."
+      "reconfigure_successful": "Reconfiguration successful.",
+      "already_configured": "This Bambu account is already connected.",
+      "reauth_successful": "Logged in again."
     }
   },
   "config_subentries": {
@@ -65,7 +102,9 @@
             "ams_slot": "AMS slot (optional, Bambu Lab printer)",
             "ams_sync_remaining": "Follow the AMS remaining amount (spools with RFID only)",
             "notify_targets": "Notify (optional)",
-            "persistent_notification": "Show a persistent notification"
+            "persistent_notification": "Show a persistent notification",
+            "cloud_spool": "Bambu cloud spool (– = automatic by RFID)",
+            "cloud_sync_remaining": "Follow the cloud's remaining amount"
           }
         },
         "name": {
@@ -90,7 +129,9 @@
             "ams_sync_remaining": "Follow the AMS remaining amount (spools with RFID only)",
             "notify_targets": "Notify (optional)",
             "persistent_notification": "Show a persistent notification",
-            "box": "Filament box (changing it moves the spool)"
+            "box": "Filament box (changing it moves the spool)",
+            "cloud_spool": "Bambu cloud spool (– = automatic by RFID)",
+            "cloud_sync_remaining": "Follow the cloud's remaining amount"
           }
         }
       },
@@ -169,6 +210,14 @@
           "name": "Amount",
           "description": "New remaining weight in grams. If left empty, the spool is reset to its total weight."
         }
+      }
+    }
+  },
+  "selector": {
+    "cloud_region": {
+      "options": {
+        "global": "Global",
+        "china": "China"
       }
     }
   }

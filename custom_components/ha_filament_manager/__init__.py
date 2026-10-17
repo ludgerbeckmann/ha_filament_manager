@@ -24,6 +24,8 @@ from homeassistant.helpers.typing import ConfigType
 
 from .boxes import box_subentry, box_title, new_box_subentry
 from .ams import AmsTracker
+from .cloud_sync import CloudSync
+from .cloud import CloudCoordinator, CloudRuntimeData, async_announce_updates, is_cloud_entry
 from .entity import box_device_info
 from .const import (
     CARD_FILENAME,
@@ -52,6 +54,7 @@ class HubRuntimeData:
 
     spools: dict[str, SpoolRuntimeData]
     ams: AmsTracker
+    cloud: CloudSync
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -70,6 +73,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the hub (box) entry and every spool subentry it currently holds."""
+    if is_cloud_entry(entry):
+        return await _async_setup_cloud_entry(hass, entry)
+
     # The box subentry owns the hub's device and entities. Hubs from before it
     # existed (or one the user removed) get it back here.
     box = box_subentry(entry)
@@ -99,6 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     tracker = AmsTracker(hass, entry)
+    cloud = CloudSync(hass, entry, tracker)
     entry.runtime_data = HubRuntimeData(
         spools={
             subentry_id: SpoolRuntimeData(
@@ -110,12 +117,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if subentry.subentry_type == SUBENTRY_TYPE_SPOOL
         },
         ams=tracker,
+        cloud=cloud,
     )
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # Only follow the AMS once the entities exist to receive its updates.
     await tracker.async_start()
     entry.async_on_unload(tracker.async_stop)
+    await cloud.async_start()
+    entry.async_on_unload(cloud.async_stop)
+    return True
+
+
+async def _async_setup_cloud_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up the Bambu cloud account: it only feeds the hubs' spools, it has no entities."""
+    coordinator = CloudCoordinator(hass, entry)
+    await coordinator.async_config_entry_first_refresh()
+    entry.runtime_data = CloudRuntimeData(coordinator)
+    async_announce_updates(hass, entry)
     return True
 
 
@@ -136,5 +155,7 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload the hub's config entry."""
+    """Unload the hub's (or the cloud account's) config entry."""
+    if is_cloud_entry(entry):
+        return True
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

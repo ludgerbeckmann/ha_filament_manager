@@ -24,6 +24,8 @@ from .const import (
     SERVICE_REFILL_SPOOL,
     SUBENTRY_TYPE_SPOOL,
     signal_ams_remaining,
+    signal_cloud_matched,
+    signal_cloud_remaining,
     signal_spool_updated,
 )
 from .entity import spool_device_info
@@ -84,6 +86,25 @@ class FilamentRemainingWeightNumber(RestoreNumber):
                 self.hass, signal_ams_remaining(self._subentry.subentry_id), self._handle_ams_remaining
             )
         )
+        # ... and the cloud's (Bambu cloud filament library), if the user linked one.
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_cloud_remaining(self._subentry.subentry_id), self._handle_ams_remaining
+            )
+        )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, signal_cloud_matched(self._subentry.subentry_id), self._handle_cloud_matched
+            )
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | int] | None:
+        """Name the matched Bambu cloud spool, when there is one."""
+        match = self._entry.runtime_data.cloud.matches.get(self._subentry.subentry_id)
+        if match is None:
+            return None
+        return {"cloud_spool": match.name, "cloud_spool_id": match.id}
 
     @callback
     def _apply(self, value: float, *, write_state: bool = True) -> None:
@@ -94,8 +115,12 @@ class FilamentRemainingWeightNumber(RestoreNumber):
         async_dispatcher_send(self.hass, signal_spool_updated(self._subentry.subentry_id))
 
     @callback
+    def _handle_cloud_matched(self) -> None:
+        self.async_write_ha_state()
+
+    @callback
     def _handle_ams_remaining(self, percent: float) -> None:
-        """Follow the AMS: its percentage refers to this spool's total weight."""
+        """Follow the AMS or the cloud: their percentage refers to this spool's total weight."""
         self._apply(round(self._attr_native_max_value * percent / 100))
 
     async def async_set_native_value(self, value: float) -> None:

@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 from types import MappingProxyType
 
 from homeassistant.components import persistent_notification as pn
@@ -11,10 +12,24 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.ha_filament_manager.boxes import box_title
+from custom_components.ha_filament_manager.cloud import (
+    BambuCloudClient,
+    BambuCloudError,
+    CodeIncorrect,
+    EmailCodeRequired,
+    cloud_spools,
+    parse_spool,
+)
 from custom_components.ha_filament_manager.const import (
     BOX_TITLE_PREFIX,
     CONF_AMS_SLOT,
     CONF_AMS_SYNC,
+    CONF_CLOUD,
+    CONF_CLOUD_EMAIL,
+    CONF_CLOUD_REGION,
+    CONF_CLOUD_SPOOL,
+    CONF_CLOUD_SYNC,
+    CONF_CLOUD_TOKEN,
     CARD_URL_PATH,
     CONF_COLOR,
     CONF_DIAMETER,
@@ -295,10 +310,18 @@ async def test_without_spool_limit_any_number_of_spools_fits(hass: HomeAssistant
 # --- hub (= filament box) flows ---------------------------------------------
 
 
-async def test_hub_flow_creates_a_named_box_with_automatic_limits(hass: HomeAssistant) -> None:
+async def _start_hub_flow(hass: HomeAssistant):
+    """Start the add flow and pick "filament box" from its menu (shown until a cloud account exists)."""
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    if result["type"] == "menu":
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "hub"})
+    return result
+
+
+async def test_hub_flow_creates_a_named_box_with_automatic_limits(hass: HomeAssistant) -> None:
+    result = await _start_hub_flow(hass)
     assert result["type"] == "form"
-    assert result["step_id"] == "user"
+    assert result["step_id"] == "hub"
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"name": "Filamentbox 1", CONF_HUMIDITY_SENSOR: "sensor.box_humidity"}
@@ -313,13 +336,13 @@ async def test_hub_flow_creates_a_named_box_with_automatic_limits(hass: HomeAssi
 
 
 async def test_hub_flow_rejects_an_empty_name_and_allows_several_hubs(hass: HomeAssistant) -> None:
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await _start_hub_flow(hass)
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "  "})
     assert result["type"] == "form"
     assert result["errors"] == {"name": "name_required"}
 
     for name in ("Filamentbox 1", "Filamentbox 2"):
-        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        result = await _start_hub_flow(hass)
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": name})
         assert result["type"] == "create_entry"
         await hass.async_block_till_done()
@@ -335,7 +358,7 @@ def _box_subentries(entry: MockConfigEntry) -> list[ConfigSubentry]:
 
 
 async def test_hub_flow_creates_a_box_subentry_named_like_the_hub(hass: HomeAssistant) -> None:
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await _start_hub_flow(hass)
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "Filamentbox 7"})
     assert result["type"] == "create_entry"
     await hass.async_block_till_done()
@@ -1077,3 +1100,279 @@ async def test_moving_a_spool_hands_its_learned_rfid_to_the_new_box(hass: HomeAs
     _set_slot(hass, rfid=RFID_B)
     await hass.async_block_till_done()
     assert hass.states.get(IN_PRINTER).state == "off"
+
+
+# --- Bambu cloud comparison -----------------------------------------------------
+
+CLOUD_LIBRARY = [
+    {
+        "id": 11,
+        "RFID": RFID_A.lower(),
+        "filamentName": "PLA Basic",
+        "filamentType": "PLA",
+        "color": "#161616FF",
+        "netWeight": 640,
+        "totalNetWeight": 1000,
+    },
+    {
+        "id": 12,
+        "RFID": "",
+        "filamentName": "PETG HF",
+        "filamentType": "PETG",
+        "displayName": "07/29/2026 10:03 added",
+        "netWeight": 300,
+        "totalNetWeight": 1000,
+    },
+]
+
+
+def _library(**remaining) -> list[dict]:
+    """The cloud library, with other remaining weights (by cloud id) where given."""
+    return [{**spool, "netWeight": remaining.get(str(spool["id"]), spool["netWeight"])} for spool in CLOUD_LIBRARY]
+
+
+async def _setup_cloud(hass: HomeAssistant, library=None) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Bambu Cloud (me@example.com)",
+        unique_id="cloud-global-me@example.com",
+        data={
+            CONF_CLOUD: True,
+            CONF_CLOUD_REGION: "global",
+            CONF_CLOUD_EMAIL: "me@example.com",
+            CONF_CLOUD_TOKEN: "token",
+        },
+    )
+    entry.add_to_hass(hass)
+    with patch.object(BambuCloudClient, "get_spools", return_value=library or CLOUD_LIBRARY):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    return entry
+
+
+async def _refresh_cloud(hass: HomeAssistant, cloud: MockConfigEntry, library) -> None:
+    with patch.object(BambuCloudClient, "get_spools", return_value=library):
+        await cloud.runtime_data.coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+
+async def test_cloud_spools_are_parsed_and_stamp_names_ignored() -> None:
+    plain, stamped = (parse_spool(raw) for raw in CLOUD_LIBRARY)
+    assert (plain.name, plain.rfid, plain.percent) == ("PLA Basic", RFID_A, 64)
+    assert stamped.name == "PETG HF"  # not the auto-generated "07/29/2026 10:03 added"
+    assert parse_spool({"filamentName": "no id"}) is None
+
+
+async def test_add_flow_offers_the_cloud_account_until_it_is_connected(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    assert result["type"] == "menu"
+    assert result["menu_options"] == ["hub", "cloud"]
+    hass.config_entries.flow.async_abort(result["flow_id"])
+
+    await _setup_cloud(hass)
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    assert result["type"] == "form"
+    assert result["step_id"] == "hub"
+
+
+async def test_cloud_login_with_an_emailed_code_creates_the_account_entry(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "cloud"})
+    assert result["step_id"] == "cloud"
+
+    user = {CONF_CLOUD_REGION: "global", CONF_CLOUD_EMAIL: "me@example.com", "password": "secret"}
+    with patch.object(BambuCloudClient, "login", side_effect=EmailCodeRequired):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], user)
+    assert result["step_id"] == "cloud_code"
+
+    with patch.object(BambuCloudClient, "login_with_code", side_effect=CodeIncorrect):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"code": "000000"})
+    assert result["errors"] == {"base": "invalid_code"}
+
+    def _accept(self, email, code):
+        self.token = "fresh-token"
+        return self.token
+
+    with (
+        patch.object(BambuCloudClient, "login_with_code", _accept),
+        patch.object(BambuCloudClient, "get_spools", return_value=CLOUD_LIBRARY),
+    ):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"code": "123456"})
+        await hass.async_block_till_done()
+    assert result["type"] == "create_entry"
+    assert result["data"] == {
+        CONF_CLOUD: True,
+        CONF_CLOUD_REGION: "global",
+        CONF_CLOUD_EMAIL: "me@example.com",
+        CONF_CLOUD_TOKEN: "fresh-token",
+    }
+    assert "password" not in result["data"]
+
+
+async def test_cloud_login_reports_unreachable_cloud(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "cloud"})
+    user = {CONF_CLOUD_REGION: "global", CONF_CLOUD_EMAIL: "me@example.com", "password": "secret"}
+    with patch.object(BambuCloudClient, "login", side_effect=BambuCloudError("down")):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], user)
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+async def test_cloud_entry_is_neither_a_box_nor_a_target_for_spools(hass: HomeAssistant) -> None:
+    await _setup_cloud(hass)
+    hub = await _setup_entry(hass)
+    result = await _start_reconfigure(hass, hub, _subentry_by_title(hub, "Test Spool"))
+    assert "box" not in [str(key) for key in result["data_schema"].schema]  # only one real box
+    assert set(cloud_spools(hass)) == {11, 12}
+
+
+async def test_cloud_field_is_only_offered_with_a_connected_account(hass: HomeAssistant) -> None:
+    hub = await _setup_entry(hass)
+    result = await _start_reconfigure(hass, hub, _subentry_by_title(hub, "Test Spool"))
+    assert CONF_CLOUD_SPOOL not in [str(key) for key in result["data_schema"].schema]
+    hass.config_entries.subentries.async_abort(result["flow_id"])
+
+    await _setup_cloud(hass)
+    result = await _start_reconfigure(hass, hub, _subentry_by_title(hub, "Test Spool"))
+    schema = result["data_schema"]
+    assert _schema_options(schema, CONF_CLOUD_SPOOL) == ["", "12", "11"]  # by name
+    assert _schema_default(schema, CONF_CLOUD_SYNC) is True
+
+    # "-" (empty) means automatic and is not stored.
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], _reconfigure_input(**{CONF_CLOUD_SPOOL: ""})
+    )
+    assert result["reason"] == "reconfigure_successful"
+    assert CONF_CLOUD_SPOOL not in _subentry_by_title(hub, "Test Spool").data
+
+
+async def test_chosen_cloud_spool_sets_the_remaining_weight_once_then_follows_changes(
+    hass: HomeAssistant,
+) -> None:
+    cloud = await _setup_cloud(hass)
+    await _setup_hub(hass, subentries_data=[_spool_subentry(**{CONF_CLOUD_SPOOL: "11"})])
+
+    # First match: adopt the cloud's 64 % of this spool's 1000 g.
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 640
+    assert hass.states.get(NUMBER_ENTITY).attributes["cloud_spool"] == "PLA Basic"
+
+    # A value set by hand stays while the cloud reports the same as before ...
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": NUMBER_ENTITY, "value": 500}, blocking=True
+    )
+    await _refresh_cloud(hass, cloud, _library())
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 500
+
+    # ... and follows the cloud again once it changes.
+    await _refresh_cloud(hass, cloud, _library(**{"11": 250}))
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 250
+
+
+async def test_cloud_spool_is_matched_by_the_rfid_learned_from_the_ams(hass: HomeAssistant) -> None:
+    _set_slot(hass, rfid=RFID_A)
+    await _setup_cloud(hass)
+    await _setup_ams_spool(hass)  # no cloud spool picked: automatic
+
+    assert hass.states.get(NUMBER_ENTITY).attributes["cloud_spool_id"] == 11
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 640
+
+
+async def test_without_a_match_or_with_sync_off_nothing_changes(hass: HomeAssistant) -> None:
+    await _setup_cloud(hass)
+    await _setup_hub(hass, subentries_data=[_spool_subentry(**{CONF_CLOUD_SPOOL: "11", CONF_CLOUD_SYNC: False})])
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 750  # the initial value
+    assert hass.states.get(NUMBER_ENTITY).attributes["cloud_spool_id"] == 11  # matched, just not followed
+
+
+async def test_hubs_carry_on_when_the_cloud_does_not_answer(hass: HomeAssistant) -> None:
+    cloud = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="cloud-global-me@example.com",
+        data={CONF_CLOUD: True, CONF_CLOUD_REGION: "global", CONF_CLOUD_EMAIL: "x", CONF_CLOUD_TOKEN: "t"},
+    )
+    cloud.add_to_hass(hass)
+    with patch.object(BambuCloudClient, "get_spools", side_effect=BambuCloudError("down")):
+        assert not await hass.config_entries.async_setup(cloud.entry_id)
+    await _setup_hub(hass, subentries_data=[_spool_subentry(**{CONF_CLOUD_SPOOL: "11"})])
+    assert float(hass.states.get(NUMBER_ENTITY).state) == 750
+    assert "cloud_spool" not in hass.states.get(NUMBER_ENTITY).attributes
+
+
+async def test_expired_cloud_login_asks_for_a_new_login(hass: HomeAssistant) -> None:
+    from custom_components.ha_filament_manager.cloud import AuthExpired
+
+    cloud = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="cloud-global-me@example.com",
+        data={CONF_CLOUD: True, CONF_CLOUD_REGION: "global", CONF_CLOUD_EMAIL: "x", CONF_CLOUD_TOKEN: "t"},
+    )
+    cloud.add_to_hass(hass)
+    with patch.object(BambuCloudClient, "get_spools", side_effect=AuthExpired):
+        await hass.config_entries.async_setup(cloud.entry_id)
+        await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [flow["context"]["source"] for flow in flows] == ["reauth"]
+
+
+class _FakeResponse:
+    def __init__(self, status=200, body=None, text="", cookies=None):
+        self.status_code, self._body, self.text, self.cookies = status, body, text, cookies or {}
+
+    def json(self):
+        return self._body
+
+
+def _fake_curl(monkeypatch, handler):
+    """Stand in for curl_cffi (not needed to run the tests): handler(method, url, **kwargs)."""
+    import sys
+    import types
+
+    requests = types.SimpleNamespace(
+        get=lambda url, **kw: handler("get", url, **kw), post=lambda url, **kw: handler("post", url, **kw)
+    )
+    monkeypatch.setitem(sys.modules, "curl_cffi", types.SimpleNamespace(requests=requests))
+    monkeypatch.setitem(sys.modules, "curl_cffi.requests", requests)
+
+
+def test_client_reads_every_page_of_the_library_with_the_token(monkeypatch) -> None:
+    calls = []
+
+    def handler(method, url, **kwargs):
+        calls.append((url, kwargs["headers"].get("Authorization")))
+        offset = int(url.split("offset=")[1].split("&")[0])
+        return _FakeResponse(body={"total": 3, "hits": [{"id": i} for i in range(offset, min(offset + 2, 3))]})
+
+    _fake_curl(monkeypatch, handler)
+    monkeypatch.setattr("custom_components.ha_filament_manager.cloud.PAGE_SIZE", 2)
+    spools = BambuCloudClient("global", "tok").get_spools()
+    assert [spool["id"] for spool in spools] == [0, 1, 2]
+    assert len(calls) == 2 and all(auth == "Bearer tok" for _, auth in calls)
+
+
+def test_client_maps_login_answers_to_errors(monkeypatch) -> None:
+    from custom_components.ha_filament_manager.cloud import AuthExpired, CloudflareBlocked
+
+    answers = iter(
+        [
+            _FakeResponse(body={"loginType": "verifyCode"}),
+            _FakeResponse(403, text="Attention Required! | Cloudflare"),
+            _FakeResponse(401),
+        ]
+    )
+    _fake_curl(monkeypatch, lambda method, url, **kw: next(answers))
+    client = BambuCloudClient("global")
+    try:
+        client.login("a@b.c", "pw")
+        raise AssertionError("expected EmailCodeRequired")
+    except EmailCodeRequired:
+        pass
+    try:
+        client.login("a@b.c", "pw")
+        raise AssertionError("expected CloudflareBlocked")
+    except CloudflareBlocked:
+        pass
+    try:
+        BambuCloudClient("global", "old").get_spools()
+        raise AssertionError("expected AuthExpired")
+    except AuthExpired:
+        pass

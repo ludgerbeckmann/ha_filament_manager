@@ -6,8 +6,8 @@
   "dependencies": ["http", "frontend"],
   "documentation": "https://github.com/ludgerbeckmann/ha_filament_manager",
   "integration_type": "hub",
-  "iot_class": "calculated",
+  "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ludgerbeckmann/ha_filament_manager/issues",
-  "requirements": [],
-  "version": "0.13.0"
+  "requirements": ["curl_cffi>=0.13.0"],
+  "version": "0.14.0"
 }
