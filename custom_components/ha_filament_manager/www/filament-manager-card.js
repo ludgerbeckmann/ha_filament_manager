@@ -69,6 +69,7 @@ class FilamentManagerCard extends HTMLElement {
     if (
       previous.group_by !== this._config.group_by ||
       Boolean(previous.only_in_printer) !== Boolean(this._config.only_in_printer) ||
+      Boolean(previous.dark_background) !== Boolean(this._config.dark_background) ||
       Boolean(previous.collapse_boxes) !== Boolean(this._config.collapse_boxes)
     ) {
       this._lastSignature = undefined;
@@ -430,6 +431,16 @@ class FilamentManagerCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         ha-card { padding: 16px; }
+        /* Like the Bambu Lab cards: a black card with light text, whatever the theme. */
+        ha-card.dark {
+          --ha-card-background: #101114;
+          --card-background-color: #101114;
+          --primary-text-color: #ffffff;
+          --secondary-text-color: #aeb2bb;
+          --divider-color: rgba(255, 255, 255, 0.16);
+          background: #101114;
+          color: #ffffff;
+        }
         .header { font-size: 1.2em; font-weight: 500; margin-bottom: 12px; color: var(--primary-text-color); }
         .row {
           display: flex;
@@ -535,7 +546,7 @@ class FilamentManagerCard extends HTMLElement {
         .humidity-value.alert { color: var(--error-color, #db4437); }
         .empty { color: var(--secondary-text-color); padding: 8px 0; }
       </style>
-      <ha-card>
+      <ha-card class="${this._config.dark_background ? "dark" : ""}">
         ${title ? `<div class="header">${title}</div>` : ""}
         ${rows}
       </ha-card>
@@ -707,6 +718,10 @@ class FilamentManagerCardEditor extends HTMLElement {
           <input id="only_in_printer" type="checkbox" />
           Nur Spulen im Drucker anzeigen
         </label>
+        <label class="option">
+          <input id="dark_background" type="checkbox" />
+          Dunklen Hintergrund verwenden (wie die Bambu-Lab-Karten)
+        </label>
       </div>
     `;
 
@@ -718,6 +733,9 @@ class FilamentManagerCardEditor extends HTMLElement {
     });
     this.shadowRoot.querySelector("#only_in_printer").addEventListener("change", (event) => {
       this._updateConfig("only_in_printer", event.target.checked || undefined);
+    });
+    this.shadowRoot.querySelector("#dark_background").addEventListener("change", (event) => {
+      this._updateConfig("dark_background", event.target.checked || undefined);
     });
     this.shadowRoot.querySelector("#group_by").addEventListener("change", (event) => {
       this._updateConfig("group_by", event.target.value === "box" ? undefined : event.target.value);
@@ -732,6 +750,7 @@ class FilamentManagerCardEditor extends HTMLElement {
     }
     this.shadowRoot.querySelector("#collapse").checked = Boolean(this._config.collapse_boxes);
     this.shadowRoot.querySelector("#only_in_printer").checked = Boolean(this._config.only_in_printer);
+    this.shadowRoot.querySelector("#dark_background").checked = Boolean(this._config.dark_background);
     this.shadowRoot.querySelector("#group_by").value = ["material", "none"].includes(this._config.group_by)
       ? this._config.group_by
       : "box";

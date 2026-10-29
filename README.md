@@ -296,6 +296,7 @@ title: Meine Spulen   # optional
 group_by: box         # optional: box (Standard) | material | none
 only_in_printer: true # optional: nur Spulen anzeigen, die im Drucker (AMS) stecken
 collapse_boxes: true  # optional: Gruppen starten eingeklappt (Standard: false)
+dark_background: true # optional: schwarzer Kartenhintergrund wie bei den Bambu-Lab-Karten
 ```
 
 - `group_by: box` gruppiert nach Filamentbox, `material` nach Materialtyp
