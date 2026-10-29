@@ -29,3 +29,100 @@ refill_spool:
           max: 100000
           unit_of_measurement: g
           mode: box
+
+load_spool:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: ha_filament_manager
+          model: Filamentspule
+    slot:
+      required: true
+      example: sensor.p1s_ams_1_tray_1
+      selector:
+        entity:
+          domain: sensor
+          integration: bambu_lab
+
+unload_spool:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: ha_filament_manager
+
+move_spool:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: ha_filament_manager
+    box_device_id:
+      required: true
+      selector:
+        device:
+          integration: ha_filament_manager
+          model: Filamentbox
+
+add_spool:
+  fields:
+    box_device_id:
+      required: true
+      selector:
+        device:
+          integration: ha_filament_manager
+          model: Filamentbox
+    material:
+      required: true
+      example: PLA
+      selector:
+        text:
+    color:
+      required: true
+      example: Schwarz
+      selector:
+        text:
+    manufacturer:
+      required: false
+      example: Bambu Lab
+      selector:
+        text:
+    diameter:
+      required: false
+      example: "1.75"
+      selector:
+        text:
+    name:
+      required: false
+      selector:
+        text:
+    total_weight:
+      required: false
+      example: 1000
+      selector:
+        number:
+          min: 0
+          max: 100000
+          unit_of_measurement: g
+          mode: box
+    remaining_weight:
+      required: false
+      example: 1000
+      selector:
+        number:
+          min: 0
+          max: 100000
+          unit_of_measurement: g
+          mode: box
+
+remove_spool:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: ha_filament_manager

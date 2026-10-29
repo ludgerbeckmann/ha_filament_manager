@@ -16,19 +16,29 @@ from __future__ import annotations
 import inspect
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry, ConfigSubentry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .ams import async_move_learned_rfid
-from .const import DOMAIN, MOVING, SUBENTRY_TYPE_SPOOL
+from .boxes import spool_subentries
+from .const import CONF_SPOOL_LIMIT, DOMAIN, MOVING, SUBENTRY_TYPE_SPOOL
 from .entity import hub_device_id
 
 
 # Home Assistant 2026.9 lets a device belong to a single config entry and
 # subentry and deprecates adding/removing config entries on a device.
 _MOVES_DEVICES = "new_config_entry_id" in inspect.signature(dr.DeviceRegistry.async_update_device).parameters
+
+
+def move_blocker(target: ConfigEntry) -> str | None:
+    """Why a spool cannot be added to / moved into this box (an error key), or None."""
+    if target.state is not ConfigEntryState.LOADED:
+        return "box_unavailable"
+    if (limit := target.data.get(CONF_SPOOL_LIMIT)) and len(spool_subentries(target)) >= limit:
+        return "box_full"
+    return None
 
 
 async def async_move_spool(

@@ -22,7 +22,6 @@ from homeassistant.config_entries import (
     SOURCE_REAUTH,
     SOURCE_RECONFIGURE,
     ConfigEntry,
-    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
     ConfigSubentryData,
@@ -46,7 +45,7 @@ from .cloud import (
     is_cloud_entry,
 )
 from .boxes import box_subentry, box_title, spool_subentries
-from .move import async_move_spool
+from .move import async_move_spool, move_blocker
 from .const import (
     CONF_AMS_SLOT,
     CLOUD_REGIONS,
@@ -596,10 +595,8 @@ class SpoolSubentryFlowHandler(ConfigSubentryFlow):
                 errors["name"] = "name_required"
             elif target is None or target.entry_id == entry.entry_id:
                 return self.async_update_and_abort(entry, subentry, title=name, data=user_input)
-            elif target.state is not ConfigEntryState.LOADED:
-                errors[CONF_BOX] = "box_unavailable"
-            elif (limit := target.data.get(CONF_SPOOL_LIMIT)) and len(spool_subentries(target)) >= limit:
-                errors[CONF_BOX] = "box_full"
+            elif (blocker := move_blocker(target)) is not None:
+                errors[CONF_BOX] = blocker
             else:
                 await async_move_spool(self.hass, entry, subentry, target, title=name, data=user_input)
                 return self.async_abort(

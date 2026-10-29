@@ -781,7 +781,7 @@ async def test_overview_card_is_served_and_registered(hass: HomeAssistant, hass_
     assert resp.status == 200
     body = await resp.text()
     assert "customElements.define(\"filament-manager-card\"" in body
-    assert "group_by" in body and "only_in_printer" in body
+    assert "group_by" in body and "only_in_printer" in body and "remove_spool" in body
 
 
 async def test_hubs_are_independent(hass: HomeAssistant) -> None:
@@ -1376,3 +1376,115 @@ def test_client_maps_login_answers_to_errors(monkeypatch) -> None:
         raise AssertionError("expected AuthExpired")
     except AuthExpired:
         pass
+
+
+# --- management services (used by the card) ------------------------------------
+
+
+def _device_id(hass: HomeAssistant, entry: MockConfigEntry, subentry_id: str | None = None) -> str:
+    identifier = (DOMAIN, subentry_id or entry.entry_id)
+    return dr.async_get(hass).async_get_device_by_identifier(identifier, entry.entry_id).id
+
+
+async def _call(hass: HomeAssistant, service: str, **data) -> None:
+    await hass.services.async_call(DOMAIN, service, data, blocking=True)
+    await hass.async_block_till_done()
+
+
+async def test_load_spool_assigns_the_slot_and_takes_the_previous_spool_out(hass: HomeAssistant) -> None:
+    _register_slot(hass)
+    _set_slot(hass, rfid=None)
+    hub = await _setup_hub(
+        hass,
+        subentries_data=[
+            _spool_subentry("Test Spool", **{CONF_AMS_SLOT: SLOT}),
+            _spool_subentry("Second Spool"),
+        ],
+    )
+    first, second = (_subentry_by_title(hub, title) for title in ("Test Spool", "Second Spool"))
+
+    await _call(hass, "load_spool", device_id=_device_id(hass, hub, second.subentry_id), slot=SLOT)
+
+    assert hub.subentries[second.subentry_id].data[CONF_AMS_SLOT] == SLOT
+    assert CONF_AMS_SLOT not in hub.subentries[first.subentry_id].data
+    assert hass.states.get("binary_sensor.second_spool_in_printer").state == "on"
+    assert hass.states.get(IN_PRINTER) is None or hass.states.get(IN_PRINTER).state == "unavailable"
+
+
+async def test_load_spool_rejects_unknown_slots_and_unload_clears_it(hass: HomeAssistant) -> None:
+    from homeassistant.exceptions import ServiceValidationError
+
+    _register_slot(hass)
+    hub = await _setup_ams_spool(hass)
+    spool = _subentry_by_title(hub, "Test Spool")
+    device_id = _device_id(hass, hub, spool.subentry_id)
+
+    try:
+        await _call(hass, "load_spool", device_id=device_id, slot="sensor.not_a_slot")
+        raise AssertionError("expected an error")
+    except ServiceValidationError:
+        pass
+
+    await _call(hass, "unload_spool", device_id=device_id)
+    assert CONF_AMS_SLOT not in hub.subentries[spool.subentry_id].data
+
+
+async def test_add_spool_creates_a_named_spool_with_suggested_weight(hass: HomeAssistant) -> None:
+    hub = await _setup_hub(hass)
+    await _call(hass, "add_spool", box_device_id=_device_id(hass, hub), material="TPU", color="Rot")
+
+    spool = next(s for s in hub.subentries.values() if s.subentry_type == SUBENTRY_TYPE_SPOOL)
+    assert spool.title == "TPU Rot"
+    assert spool.data[CONF_TOTAL_WEIGHT] == 500  # suggested for TPU
+    assert spool.data[CONF_INITIAL_REMAINING_WEIGHT] == 500
+    assert hass.states.get("number.tpu_rot_remaining_weight").state == "500"
+
+
+async def test_add_spool_respects_the_limit_and_the_weights(hass: HomeAssistant) -> None:
+    from homeassistant.exceptions import ServiceValidationError
+
+    hub = await _setup_hub(hass, subentries_data=[_spool_subentry()], **{CONF_SPOOL_LIMIT: 1})
+    box = _device_id(hass, hub)
+    for extra in ({}, {"total_weight": 100, "remaining_weight": 200}):
+        try:
+            await _call(hass, "add_spool", box_device_id=box, material="PLA", color="Rot", **extra)
+            raise AssertionError("expected an error")
+        except ServiceValidationError:
+            pass
+
+
+async def test_remove_spool_deletes_it_with_its_entities(hass: HomeAssistant) -> None:
+    hub = await _setup_entry(hass)
+    spool = _subentry_by_title(hub, "Test Spool")
+    await _call(hass, "remove_spool", device_id=_device_id(hass, hub, spool.subentry_id))
+
+    assert spool.subentry_id not in hub.subentries
+    assert hass.states.get(NUMBER_ENTITY) is None
+    assert er.async_get(hass).async_get(NUMBER_ENTITY) is None
+
+
+async def test_move_spool_service_moves_it_to_the_other_box(hass: HomeAssistant) -> None:
+    source = await _setup_entry(hass)
+    target = await _setup_hub(hass, title="Second Box")
+    spool = _subentry_by_title(source, "Test Spool")
+
+    await _call(
+        hass,
+        "move_spool",
+        device_id=_device_id(hass, source, spool.subentry_id),
+        box_device_id=_device_id(hass, target),
+    )
+    assert spool.subentry_id not in source.subentries
+    assert spool.subentry_id in target.subentries
+    assert hass.states.get(NUMBER_ENTITY) is not None
+
+
+async def test_websocket_options_list_choices_and_slots(hass: HomeAssistant, hass_ws_client) -> None:
+    assert await async_setup_component(hass, DOMAIN, {})
+    _register_slot(hass)
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": f"{DOMAIN}/options"})
+    result = (await client.receive_json())["result"]
+    assert "PLA" in result["materials"] and "Schwarz" in result["colors"]
+    assert result["diameters"] == ["1.75", "2.85"]
+    assert result["slots"] == [SLOT]
