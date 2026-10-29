@@ -198,6 +198,24 @@ installiert). Login und Endpunkte folgen
 [Bambu Filaments](https://github.com/Timmes123/ha-bambu-filaments) (MIT,
 © 2026 Timmes123).
 
+## Spulen in der Karte verwalten
+
+Das Stift-Symbol rechts im Kartenkopf schaltet den Bearbeiten-Modus ein (nur
+für Administratoren sichtbar). Dann erscheinen:
+
+- pro Spule drei Aktionen: **in den Drucker laden** bzw. herausnehmen (AMS-Slot
+  zuordnen – ein Slot hat nur eine Spule, die bisherige wird herausgenommen; das
+  ist vor allem für Spulen ohne RFID nützlich), **in eine andere Box
+  verschieben** und **löschen** (mit Rückfrage),
+- ein **+** an jeder Box und ein Knopf **Spule anlegen** (Box, Material, Farbe,
+  Hersteller, Durchmesser, optional Name und Gewichte; Name und Gesamtgewicht
+  werden sonst wie im Einrichtungsdialog vorgeschlagen).
+
+Dahinter stehen Dienste, die du auch in Automationen nutzen kannst:
+`load_spool`, `unload_spool`, `move_spool`, `add_spool` und `remove_spool`.
+Jede Änderung lädt die betroffene Box kurz neu (ca. eine Sekunde), Restmengen
+bleiben erhalten.
+
 ## Dienste
 
 - `ha_filament_manager.consume_filament` – reduziert die Restmenge einer Spule

@@ -24,6 +24,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from .boxes import box_subentry, box_title, new_box_subentry
 from .ams import AmsTracker
+from .manage import async_register_services, async_register_websocket
 from .cloud_sync import CloudSync
 from .cloud import CloudCoordinator, CloudRuntimeData, async_announce_updates, is_cloud_entry
 from .entity import box_device_info
@@ -68,6 +69,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         [StaticPathConfig(CARD_URL_PATH, str(card_path), cache_headers=True)]
     )
     add_extra_js_url(hass, f"{CARD_URL_PATH}?v={CARD_VERSION}")
+    async_register_services(hass)
+    async_register_websocket(hass)
     return True
 
 

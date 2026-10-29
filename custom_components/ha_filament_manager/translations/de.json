@@ -211,6 +211,92 @@
           "description": "Neue Restmenge in Gramm. Wenn leer, wird auf das Gesamtgewicht zurückgesetzt."
         }
       }
+    },
+    "load_spool": {
+      "name": "Spule in den Drucker laden",
+      "description": "Ordnet eine Spule einem AMS-Slot eines Bambu-Lab-Druckers zu. Die bisher diesem Slot zugeordnete Spule wird herausgenommen.",
+      "fields": {
+        "device_id": {
+          "name": "Spule",
+          "description": "Das Gerät der Spule."
+        },
+        "slot": {
+          "name": "AMS-Slot",
+          "description": "Der Slot-Sensor der Bambu-Lab-Integration."
+        }
+      }
+    },
+    "unload_spool": {
+      "name": "Spule aus dem Drucker nehmen",
+      "description": "Hebt die AMS-Slot-Zuordnung einer Spule auf.",
+      "fields": {
+        "device_id": {
+          "name": "Spule",
+          "description": "Das Gerät der Spule."
+        }
+      }
+    },
+    "move_spool": {
+      "name": "Spule in andere Box verschieben",
+      "description": "Verschiebt eine Spule in eine andere Filamentbox, Entitäten und Verlauf bleiben erhalten.",
+      "fields": {
+        "device_id": {
+          "name": "Spule",
+          "description": "Das Gerät der Spule."
+        },
+        "box_device_id": {
+          "name": "Zielbox",
+          "description": "Das Gerät der Filamentbox."
+        }
+      }
+    },
+    "add_spool": {
+      "name": "Spule anlegen",
+      "description": "Legt eine Spule in einer Filamentbox an.",
+      "fields": {
+        "box_device_id": {
+          "name": "Box",
+          "description": "Das Gerät der Filamentbox."
+        },
+        "material": {
+          "name": "Material",
+          "description": "z. B. PLA."
+        },
+        "color": {
+          "name": "Farbe",
+          "description": "z. B. Schwarz."
+        },
+        "manufacturer": {
+          "name": "Hersteller",
+          "description": "Optional."
+        },
+        "diameter": {
+          "name": "Durchmesser",
+          "description": "1.75 oder 2.85 (mm)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Wenn leer, aus Hersteller, Material und Farbe gebildet."
+        },
+        "total_weight": {
+          "name": "Gesamtgewicht",
+          "description": "In Gramm; wenn leer, aus Material und Hersteller vorgeschlagen."
+        },
+        "remaining_weight": {
+          "name": "Restgewicht",
+          "description": "In Gramm; Standard ist das Gesamtgewicht."
+        }
+      }
+    },
+    "remove_spool": {
+      "name": "Spule löschen",
+      "description": "Löscht eine Spule samt Gerät und Entitäten.",
+      "fields": {
+        "device_id": {
+          "name": "Spule",
+          "description": "Das Gerät der Spule."
+        }
+      }
     }
   },
   "selector": {
@@ -219,6 +305,26 @@
         "global": "Global",
         "china": "China"
       }
+    }
+  },
+  "exceptions": {
+    "spool_not_found": {
+      "message": "Die Spule wurde nicht gefunden."
+    },
+    "box_not_found": {
+      "message": "Die Filamentbox wurde nicht gefunden."
+    },
+    "box_unavailable": {
+      "message": "Die Filamentbox „{box}“ ist gerade nicht verfügbar."
+    },
+    "box_full": {
+      "message": "Die Filamentbox „{box}“ ist bereits voll."
+    },
+    "slot_unknown": {
+      "message": "„{slot}“ ist kein AMS-Slot der Bambu-Lab-Integration."
+    },
+    "remaining_exceeds_total": {
+      "message": "Das Restgewicht darf nicht größer als das Gesamtgewicht sein."
     }
   }
 }

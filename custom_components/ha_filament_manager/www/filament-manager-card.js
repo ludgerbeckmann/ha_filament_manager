@@ -9,6 +9,13 @@
 
 const PLATFORM = "ha_filament_manager";
 
+function esc(value) {
+  return String(value === null || value === undefined ? "" : value).replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+}
+
 const COLOR_SWATCHES = {
   schwarz: "#111111",
   weiss: "#f5f5f5",
@@ -56,6 +63,15 @@ class FilamentManagerCard extends HTMLElement {
     // `_data`/`_lastSignature` and lost on reload - the config default is
     // what applies again then.
     this._boxToggles = new Map();
+    // Edit mode (the pencil in the header) shows the management actions: load
+    // a spool into the printer, move, delete, add. UI state only.
+    this._editMode = false;
+    this._modalEl = null;
+  }
+
+  /** Managing spools needs an admin (the services are not otherwise restricted). */
+  _canManage() {
+    return !(this._hass && this._hass.user && this._hass.user.is_admin === false);
   }
 
   setConfig(config) {
@@ -351,8 +367,17 @@ class FilamentManagerCard extends HTMLElement {
           <span class="progress-sub" style="color:${tone}">${progressSub}</span>
         </div>
         ${humidityColumn}
+        ${this._editMode && this._canManage() ? this._renderSpoolActions(spool) : ""}
       </div>
     `;
+  }
+
+  _renderSpoolActions(spool) {
+    return `<div class="actions">
+      <ha-icon data-action="load" data-device="${esc(spool.deviceId)}" icon="${spool.inPrinter ? "mdi:printer-3d-nozzle" : "mdi:printer-3d"}" title="In den Drucker laden / herausnehmen"></ha-icon>
+      <ha-icon data-action="move" data-device="${esc(spool.deviceId)}" icon="mdi:swap-horizontal" title="In andere Box verschieben"></ha-icon>
+      <ha-icon data-action="delete" data-device="${esc(spool.deviceId)}" icon="mdi:delete-outline" title="Spule löschen"></ha-icon>
+    </div>`;
   }
 
   _renderBoxSection(box) {
@@ -402,9 +427,28 @@ class FilamentManagerCard extends HTMLElement {
         <span class="box-name">${box.name}</span>
         ${spoolSwatches}
         ${humidityBadge}
+        ${
+          this._editMode && this._canManage() && box.icon === "mdi:archive-outline"
+            ? `<ha-icon class="box-add" data-action="add" data-box="${esc(box.key)}" icon="mdi:plus" title="Spule in dieser Box anlegen"></ha-icon>`
+            : ""
+        }
       </div>
       ${isCollapsed ? "" : box.spools.map((spool) => this._renderSpoolRow(spool, { indent: true, showBox })).join("")}
     `;
+  }
+
+  _renderHeader(title) {
+    const manage = this._canManage();
+    if (!title && !manage) return "";
+    const toggle = manage
+      ? `<ha-icon
+           class="edit-toggle ${this._editMode ? "active" : ""}"
+           icon="${this._editMode ? "mdi:check" : "mdi:pencil"}"
+           data-action="toggle-edit"
+           title="${this._editMode ? "Bearbeiten beenden" : "Spulen verwalten"}"
+         ></ha-icon>`
+      : "";
+    return `<div class="header"><span>${esc(title)}</span>${toggle}</div>`;
   }
 
   _render(data) {
@@ -441,7 +485,71 @@ class FilamentManagerCard extends HTMLElement {
           background: #101114;
           color: #ffffff;
         }
-        .header { font-size: 1.2em; font-weight: 500; margin-bottom: 12px; color: var(--primary-text-color); }
+        .header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 1.2em;
+          font-weight: 500;
+          margin-bottom: 12px;
+          color: var(--primary-text-color);
+        }
+        .edit-toggle, .actions ha-icon, .box-add { cursor: pointer; color: var(--secondary-text-color); }
+        .edit-toggle { --mdc-icon-size: 22px; }
+        .edit-toggle.active { color: var(--primary-color); }
+        .actions { display: flex; gap: 6px; flex: none; }
+        .actions ha-icon { --mdc-icon-size: 20px; }
+        .actions ha-icon:hover, .box-add:hover { color: var(--primary-color); }
+        .box-add { --mdc-icon-size: 20px; flex: none; }
+        .add-btn, .modal button {
+          font: inherit;
+          cursor: pointer;
+          border-radius: 8px;
+          border: 1px solid var(--divider-color);
+          background: transparent;
+          color: var(--primary-text-color);
+          padding: 8px 14px;
+        }
+        .add-btn { margin-top: 12px; width: 100%; color: var(--primary-color); }
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 20;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(0, 0, 0, 0.5);
+        }
+        .modal {
+          box-sizing: border-box;
+          width: min(420px, calc(100vw - 32px));
+          max-height: calc(100vh - 32px);
+          overflow: auto;
+          padding: 20px;
+          border-radius: 12px;
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color);
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+        .modal h3 { margin: 0 0 12px; font-size: 1.1em; font-weight: 500; }
+        .modal p { margin: 0 0 12px; color: var(--secondary-text-color); }
+        .modal label { display: block; margin: 10px 0 4px 2px; font-size: 12px; color: var(--secondary-text-color); }
+        .modal select, .modal input {
+          box-sizing: border-box;
+          width: 100%;
+          height: 44px;
+          padding: 0 12px;
+          font: inherit;
+          color: var(--primary-text-color);
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.06));
+          border: none;
+          border-bottom: 1px solid var(--secondary-text-color);
+          border-radius: 4px 4px 0 0;
+        }
+        .modal .buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+        .modal button.primary { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
+        .modal button.danger { background: var(--error-color, #db4437); border-color: var(--error-color, #db4437); color: #fff; }
+        .modal .error { margin-top: 12px; color: var(--error-color, #db4437); }
         .row {
           display: flex;
           align-items: center;
@@ -547,8 +655,9 @@ class FilamentManagerCard extends HTMLElement {
         .empty { color: var(--secondary-text-color); padding: 8px 0; }
       </style>
       <ha-card class="${this._config.dark_background ? "dark" : ""}">
-        ${title ? `<div class="header">${title}</div>` : ""}
+        ${this._renderHeader(title)}
         ${rows}
+        ${this._editMode && this._canManage() ? `<button class="add-btn" data-action="add">+ Spule anlegen</button>` : ""}
       </ha-card>
     `;
 
@@ -589,6 +698,203 @@ class FilamentManagerCard extends HTMLElement {
         this._openMoreInfo(entityId);
       });
     });
+
+    // Edit mode: the pencil, the per-row actions, the "+" buttons.
+    this.shadowRoot.querySelectorAll("[data-action]").forEach((element) => {
+      element.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const action = element.getAttribute("data-action");
+        if (action === "toggle-edit") {
+          this._editMode = !this._editMode;
+          this._render(this._data);
+          return;
+        }
+        this._openModal(action, {
+          device: element.getAttribute("data-device"),
+          box: element.getAttribute("data-box"),
+        });
+      });
+    });
+
+    // A dialog that is open survives re-renders (and keeps what was typed).
+    if (this._modalEl) this.shadowRoot.appendChild(this._modalEl);
+  }
+
+  // ------------------------------------------------------------------ dialogs
+
+  _spoolByDevice(deviceId) {
+    return (this._data ? this._data.spools : []).find((spool) => spool.deviceId === deviceId);
+  }
+
+  _boxList() {
+    const boxes = this._data ? Object.values(this._data.boxes) : [];
+    return boxes.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  _closeModal() {
+    if (this._modalEl) this._modalEl.remove();
+    this._modalEl = null;
+  }
+
+  async _call(service, data) {
+    await this._hass.callService(PLATFORM, service, data);
+  }
+
+  /** Build a dialog; `fields` is HTML, `actions` a list of {label, kind, run(modal)}. */
+  _showModal(title, intro, fields, actions) {
+    this._closeModal();
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `<div class="modal">
+      <h3>${esc(title)}</h3>
+      ${intro ? `<p>${esc(intro)}</p>` : ""}
+      ${fields}
+      <div class="error" hidden></div>
+      <div class="buttons">
+        <button data-modal="cancel">Abbrechen</button>
+        ${actions.map((a, i) => `<button class="${a.kind || ""}" data-modal="${i}">${esc(a.label)}</button>`).join("")}
+      </div>
+    </div>`;
+    const modal = backdrop.querySelector(".modal");
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) this._closeModal();
+    });
+    backdrop.querySelector('[data-modal="cancel"]').addEventListener("click", () => this._closeModal());
+    actions.forEach((action, index) => {
+      backdrop.querySelector(`[data-modal="${index}"]`).addEventListener("click", async () => {
+        const errorBox = backdrop.querySelector(".error");
+        errorBox.hidden = true;
+        try {
+          await action.run(modal);
+          this._closeModal();
+        } catch (err) {
+          errorBox.textContent = (err && (err.message || err.error)) || String(err);
+          errorBox.hidden = false;
+        }
+      });
+    });
+    this._modalEl = backdrop;
+    this.shadowRoot.appendChild(backdrop);
+  }
+
+  _boxOptions(selected, exclude) {
+    return this._boxList()
+      .filter((box) => box.deviceId !== exclude)
+      .map((box) => `<option value="${esc(box.deviceId)}" ${box.deviceId === selected ? "selected" : ""}>${esc(box.name)}</option>`)
+      .join("");
+  }
+
+  async _openModal(kind, { device, box }) {
+    const spool = device ? this._spoolByDevice(device) : null;
+    if (kind === "delete" && spool) {
+      this._showModal(
+        "Spule löschen",
+        `„${spool.name}“ wirklich löschen? Die Entitäten und der Verlauf der Spule gehen verloren.`,
+        "",
+        [{ label: "Löschen", kind: "danger", run: () => this._call("remove_spool", { device_id: device }) }]
+      );
+    } else if (kind === "move" && spool) {
+      const others = this._boxOptions(null, spool.boxId);
+      if (!others) {
+        this._showModal("Spule verschieben", "Es gibt keine andere Filamentbox.", "", []);
+        return;
+      }
+      this._showModal(
+        "In andere Box verschieben",
+        `„${spool.name}“ behält Entitäten, Verlauf und Restmenge.`,
+        `<label for="box">Zielbox</label><select id="box">${others}</select>`,
+        [
+          {
+            label: "Verschieben",
+            kind: "primary",
+            run: (m) => this._call("move_spool", { device_id: device, box_device_id: m.querySelector("#box").value }),
+          },
+        ]
+      );
+    } else if (kind === "load" && spool) {
+      let slots = [];
+      try {
+        slots = (await this._hass.callWS({ type: `${PLATFORM}/options` })).slots;
+      } catch (err) {
+        slots = [];
+      }
+      const hass = this._hass;
+      const options = slots
+        .map((slot) => {
+          const state = hass.states[slot];
+          const label = (state && (state.attributes.friendly_name || slot)) || slot;
+          const content = state && state.attributes.name ? ` – ${state.attributes.name}` : state ? ` – ${state.state}` : "";
+          const taken = this._data.spools.find((s) => s.amsSlot === slot && s.deviceId !== device);
+          return `<option value="${esc(slot)}" ${spool.amsSlot === slot ? "selected" : ""}>${esc(label + content + (taken ? ` (jetzt: ${taken.name})` : ""))}</option>`;
+        })
+        .join("");
+      const actions = [];
+      if (options) {
+        actions.push({
+          label: "In den Drucker laden",
+          kind: "primary",
+          run: (m) => this._call("load_spool", { device_id: device, slot: m.querySelector("#slot").value }),
+        });
+      }
+      if (spool.inPrinter || spool.amsSlot) {
+        actions.push({ label: "Aus dem Drucker nehmen", run: () => this._call("unload_spool", { device_id: device }) });
+      }
+      this._showModal(
+        "Spule in den Drucker",
+        options
+          ? `„${spool.name}“ einem AMS-Slot zuordnen. Die Spule, die bisher in diesem Slot war, wird herausgenommen.`
+          : "Keine AMS-Slots gefunden (Integration Bambu Lab nötig).",
+        options ? `<label for="slot">AMS-Slot</label><select id="slot">${options}</select>` : "",
+        actions
+      );
+    } else if (kind === "add") {
+      let choices = { materials: [], colors: [], manufacturers: [], diameters: ["1.75"] };
+      try {
+        choices = await this._hass.callWS({ type: `${PLATFORM}/options` });
+      } catch (err) {
+        /* the lists are only suggestions */
+      }
+      const list = (id, items) => `<datalist id="${id}">${items.map((i) => `<option value="${esc(i)}"></option>`).join("")}</datalist>`;
+      const boxes = this._boxOptions(box || null, null);
+      if (!boxes) {
+        this._showModal("Spule anlegen", "Lege zuerst eine Filamentbox an.", "", []);
+        return;
+      }
+      this._showModal(
+        "Spule anlegen",
+        "",
+        `<label for="box">Box</label><select id="box">${boxes}</select>
+         <label for="material">Material</label><input id="material" list="materials" autocomplete="off" />
+         <label for="color">Farbe</label><input id="color" list="colors" autocomplete="off" />
+         <label for="manufacturer">Hersteller (optional)</label><input id="manufacturer" list="manufacturers" autocomplete="off" />
+         <label for="diameter">Durchmesser</label><select id="diameter">${choices.diameters.map((d) => `<option value="${esc(d)}">${esc(d)} mm</option>`).join("")}</select>
+         <label for="name">Name (leer = automatisch)</label><input id="name" autocomplete="off" />
+         <label for="total">Gesamtgewicht in g (leer = Vorschlag)</label><input id="total" type="number" min="0" />
+         <label for="remaining">Restgewicht in g (leer = voll)</label><input id="remaining" type="number" min="0" />
+         ${list("materials", choices.materials)}${list("colors", choices.colors)}${list("manufacturers", choices.manufacturers)}`,
+        [
+          {
+            label: "Anlegen",
+            kind: "primary",
+            run: (m) => {
+              const value = (id) => m.querySelector(`#${id}`).value.trim();
+              if (!value("material") || !value("color")) throw new Error("Material und Farbe angeben.");
+              const data = {
+                box_device_id: value("box"),
+                material: value("material"),
+                color: value("color"),
+                manufacturer: value("manufacturer"),
+                diameter: value("diameter"),
+              };
+              if (value("name")) data.name = value("name");
+              if (value("total")) data.total_weight = Number(value("total"));
+              if (value("remaining")) data.remaining_weight = Number(value("remaining"));
+              return this._call("add_spool", data);
+            },
+          },
+        ]
+      );
+    }
   }
 }
 

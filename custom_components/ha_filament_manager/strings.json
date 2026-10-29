@@ -211,6 +211,92 @@
           "description": "New remaining weight in grams. If left empty, the spool is reset to its total weight."
         }
       }
+    },
+    "load_spool": {
+      "name": "Load spool into printer",
+      "description": "Assigns a spool to an AMS slot of a Bambu Lab printer. The spool that was assigned to this slot before is taken out.",
+      "fields": {
+        "device_id": {
+          "name": "Spool",
+          "description": "The spool's device."
+        },
+        "slot": {
+          "name": "AMS slot",
+          "description": "The tray sensor of the Bambu Lab integration."
+        }
+      }
+    },
+    "unload_spool": {
+      "name": "Take spool out of printer",
+      "description": "Removes a spool's AMS slot assignment.",
+      "fields": {
+        "device_id": {
+          "name": "Spool",
+          "description": "The spool's device."
+        }
+      }
+    },
+    "move_spool": {
+      "name": "Move spool to another box",
+      "description": "Moves a spool to another filament box and keeps its entities and history.",
+      "fields": {
+        "device_id": {
+          "name": "Spool",
+          "description": "The spool's device."
+        },
+        "box_device_id": {
+          "name": "Target box",
+          "description": "The filament box's device."
+        }
+      }
+    },
+    "add_spool": {
+      "name": "Add spool",
+      "description": "Adds a spool to a filament box.",
+      "fields": {
+        "box_device_id": {
+          "name": "Box",
+          "description": "The filament box's device."
+        },
+        "material": {
+          "name": "Material",
+          "description": "e.g. PLA."
+        },
+        "color": {
+          "name": "Color",
+          "description": "e.g. Schwarz."
+        },
+        "manufacturer": {
+          "name": "Manufacturer",
+          "description": "Optional."
+        },
+        "diameter": {
+          "name": "Diameter",
+          "description": "1.75 or 2.85 (mm)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "If empty, built from manufacturer, material and color."
+        },
+        "total_weight": {
+          "name": "Total weight",
+          "description": "In grams; suggested from material and manufacturer if empty."
+        },
+        "remaining_weight": {
+          "name": "Remaining weight",
+          "description": "In grams; defaults to the total weight."
+        }
+      }
+    },
+    "remove_spool": {
+      "name": "Remove spool",
+      "description": "Deletes a spool with its device and entities.",
+      "fields": {
+        "device_id": {
+          "name": "Spool",
+          "description": "The spool's device."
+        }
+      }
     }
   },
   "selector": {
@@ -219,6 +305,26 @@
         "global": "Global",
         "china": "China"
       }
+    }
+  },
+  "exceptions": {
+    "spool_not_found": {
+      "message": "The spool was not found."
+    },
+    "box_not_found": {
+      "message": "The filament box was not found."
+    },
+    "box_unavailable": {
+      "message": "The filament box \"{box}\" is not available right now."
+    },
+    "box_full": {
+      "message": "The filament box \"{box}\" is already full."
+    },
+    "slot_unknown": {
+      "message": "\"{slot}\" is not an AMS slot of the Bambu Lab integration."
+    },
+    "remaining_exceeds_total": {
+      "message": "The remaining weight cannot be greater than the total weight."
     }
   }
 }
