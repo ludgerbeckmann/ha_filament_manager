@@ -138,7 +138,10 @@ def _identity_fields(defaults: dict[str, Any], *, include_name: bool) -> dict[An
         vol.Required(CONF_COLOR, default=defaults.get(CONF_COLOR, COLOR_OPTIONS[0]))
     ] = _select(COLOR_OPTIONS)
     fields[
-        vol.Optional(CONF_MANUFACTURER, default=defaults.get(CONF_MANUFACTURER, ""))
+        vol.Required(
+            CONF_MANUFACTURER,
+            default=defaults.get(CONF_MANUFACTURER) or _sorted_options(MANUFACTURER_OPTIONS)[0],
+        )
     ] = _select(MANUFACTURER_OPTIONS)
 
     return fields

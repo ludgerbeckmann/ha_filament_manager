@@ -207,9 +207,10 @@ für Administratoren sichtbar). Dann erscheinen:
   zuordnen – ein Slot hat nur eine Spule, die bisherige wird herausgenommen; das
   ist vor allem für Spulen ohne RFID nützlich), **in eine andere Box
   verschieben** und **löschen** (mit Rückfrage),
-- ein **+** an jeder Box und ein Knopf **Spule anlegen** (Box, Material, Farbe,
-  Hersteller, Durchmesser, optional Name und Gewichte; Name und Gesamtgewicht
-  werden sonst wie im Einrichtungsdialog vorgeschlagen).
+- ein Knopf **Spule anlegen**: Box, Material, Farbe und Hersteller (Pflicht)
+  sind Dropdowns wie im Einrichtungsdialog, auf Wunsch mit „Eigene Eingabe …“.
+  Name, Gesamtgewicht und Restgewicht sind direkt mit den Vorschlägen
+  vorbelegt und folgen den Auswahlen, bis du sie von Hand änderst.
 
 Dahinter stehen Dienste, die du auch in Automationen nutzen kannst:
 `load_spool`, `unload_spool`, `move_spool`, `add_spool` und `remove_spool`.

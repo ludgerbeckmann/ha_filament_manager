@@ -1431,13 +1431,13 @@ async def test_load_spool_rejects_unknown_slots_and_unload_clears_it(hass: HomeA
 
 async def test_add_spool_creates_a_named_spool_with_suggested_weight(hass: HomeAssistant) -> None:
     hub = await _setup_hub(hass)
-    await _call(hass, "add_spool", box_device_id=_device_id(hass, hub), material="TPU", color="Rot")
+    await _call(hass, "add_spool", box_device_id=_device_id(hass, hub), material="TPU", color="Rot", manufacturer="Elegoo")
 
     spool = next(s for s in hub.subentries.values() if s.subentry_type == SUBENTRY_TYPE_SPOOL)
-    assert spool.title == "TPU Rot"
+    assert spool.title == "Elegoo TPU Rot"
     assert spool.data[CONF_TOTAL_WEIGHT] == 500  # suggested for TPU
     assert spool.data[CONF_INITIAL_REMAINING_WEIGHT] == 500
-    assert hass.states.get("number.tpu_rot_remaining_weight").state == "500"
+    assert hass.states.get("number.elegoo_tpu_rot_remaining_weight").state == "500"
 
 
 async def test_add_spool_respects_the_limit_and_the_weights(hass: HomeAssistant) -> None:
@@ -1447,7 +1447,7 @@ async def test_add_spool_respects_the_limit_and_the_weights(hass: HomeAssistant)
     box = _device_id(hass, hub)
     for extra in ({}, {"total_weight": 100, "remaining_weight": 200}):
         try:
-            await _call(hass, "add_spool", box_device_id=box, material="PLA", color="Rot", **extra)
+            await _call(hass, "add_spool", box_device_id=box, material="PLA", color="Rot", manufacturer="Elegoo", **extra)
             raise AssertionError("expected an error")
         except ServiceValidationError:
             pass
@@ -1485,6 +1485,20 @@ async def test_websocket_options_list_choices_and_slots(hass: HomeAssistant, has
     client = await hass_ws_client(hass)
     await client.send_json({"id": 1, "type": f"{DOMAIN}/options"})
     result = (await client.receive_json())["result"]
-    assert "PLA" in result["materials"] and "Schwarz" in result["colors"]
+    assert result["materials"][0] == "ABS" and result["materials"][-1] == "Sonstiges"  # sorted, catch-all last
+    assert result["manufacturers"][-1] == "Sonstiges"
+    assert result["default_material"] == "PETG" and "Schwarz" in result["colors"]
+    assert "PLA" in result["materials"]
     assert result["diameters"] == ["1.75", "2.85"]
     assert result["slots"] == [SLOT]
+
+
+async def test_websocket_suggest_returns_the_setup_dialogs_name_and_weight(
+    hass: HomeAssistant, hass_ws_client
+) -> None:
+    assert await async_setup_component(hass, DOMAIN, {})
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {"id": 1, "type": f"{DOMAIN}/suggest", "material": "TPU", "color": "Rot", "manufacturer": "Elegoo"}
+    )
+    assert (await client.receive_json())["result"] == {"name": "Elegoo TPU Rot", "total_weight": 500}
