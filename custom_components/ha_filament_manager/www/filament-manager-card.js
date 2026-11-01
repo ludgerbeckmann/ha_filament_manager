@@ -427,11 +427,6 @@ class FilamentManagerCard extends HTMLElement {
         <span class="box-name">${box.name}</span>
         ${spoolSwatches}
         ${humidityBadge}
-        ${
-          this._editMode && this._canManage() && box.icon === "mdi:archive-outline"
-            ? `<ha-icon class="box-add" data-action="add" data-box="${esc(box.key)}" icon="mdi:plus" title="Spule in dieser Box anlegen"></ha-icon>`
-            : ""
-        }
       </div>
       ${isCollapsed ? "" : box.spools.map((spool) => this._renderSpoolRow(spool, { indent: true, showBox })).join("")}
     `;
@@ -494,13 +489,12 @@ class FilamentManagerCard extends HTMLElement {
           margin-bottom: 12px;
           color: var(--primary-text-color);
         }
-        .edit-toggle, .actions ha-icon, .box-add { cursor: pointer; color: var(--secondary-text-color); }
+        .edit-toggle, .actions ha-icon { cursor: pointer; color: var(--secondary-text-color); }
         .edit-toggle { --mdc-icon-size: 22px; }
         .edit-toggle.active { color: var(--primary-color); }
         .actions { display: flex; gap: 6px; flex: none; }
         .actions ha-icon { --mdc-icon-size: 20px; }
-        .actions ha-icon:hover, .box-add:hover { color: var(--primary-color); }
-        .box-add { --mdc-icon-size: 20px; flex: none; }
+        .actions ha-icon:hover { color: var(--primary-color); }
         .add-btn, .modal button {
           font: inherit;
           cursor: pointer;
@@ -657,7 +651,7 @@ class FilamentManagerCard extends HTMLElement {
       <ha-card class="${this._config.dark_background ? "dark" : ""}">
         ${this._renderHeader(title)}
         ${rows}
-        ${this._editMode && this._canManage() ? `<button class="add-btn" data-action="add">+ Spule anlegen</button>` : ""}
+        ${this._editMode && this._canManage() ? `<button class="add-btn" data-action="add">Spule anlegen</button>` : ""}
       </ha-card>
     `;
 
@@ -775,6 +769,78 @@ class FilamentManagerCard extends HTMLElement {
     });
     this._modalEl = backdrop;
     this.shadowRoot.appendChild(backdrop);
+    return modal;
+  }
+
+  /**
+   * A dropdown with the known choices plus "own value", which reveals a text
+   * field - like the setup dialog, where the dropdowns also accept free text.
+   */
+  _choiceField(id, label, items, { selected = "", optional = false } = {}) {
+    const known = items.includes(selected);
+    const options = [
+      ...(optional ? [`<option value="">–</option>`] : []),
+      ...items.map((item) => `<option value="${esc(item)}" ${item === selected ? "selected" : ""}>${esc(item)}</option>`),
+      `<option value="__custom__" ${selected && !known ? "selected" : ""}>Eigene Eingabe …</option>`,
+    ].join("");
+    return `<label for="${id}">${esc(label)}</label>
+      <select id="${id}" data-choice>${options}</select>
+      <input id="${id}-custom" placeholder="${esc(label)}" autocomplete="off" ${selected && !known ? "" : "hidden"} />`;
+  }
+
+  _wireChoices(modal) {
+    modal.querySelectorAll("select[data-choice]").forEach((select) => {
+      const custom = modal.querySelector(`#${select.id}-custom`);
+      select.addEventListener("change", () => {
+        custom.hidden = select.value !== "__custom__";
+        if (!custom.hidden) custom.focus();
+      });
+    });
+  }
+
+  /**
+   * Name, total and remaining weight are pre-filled with what the setup dialog
+   * would suggest and follow the choices above - until they are edited by hand.
+   */
+  _wireSuggestions(modal) {
+    const field = (id) => modal.querySelector(`#${id}`);
+    ["name", "total", "remaining"].forEach((id) => {
+      field(id).addEventListener("input", () => {
+        field(id).dataset.touched = "1";
+        // The remaining weight follows the total until it is set by hand.
+        if (id === "total" && !field("remaining").dataset.touched) field("remaining").value = field("total").value;
+      });
+    });
+    let latest = 0;
+    const refresh = async () => {
+      const request = ++latest;
+      const material = this._choiceValue(modal, "material");
+      const color = this._choiceValue(modal, "color");
+      const manufacturer = this._choiceValue(modal, "manufacturer");
+      if (!material || !color || !manufacturer) return;
+      let suggestion;
+      try {
+        suggestion = await this._hass.callWS({ type: `${PLATFORM}/suggest`, material, color, manufacturer });
+      } catch (err) {
+        return;
+      }
+      if (request !== latest) return; // a newer choice is already on its way
+      if (!field("name").dataset.touched) field("name").value = suggestion.name;
+      if (!field("total").dataset.touched) {
+        field("total").value = suggestion.total_weight;
+        if (!field("remaining").dataset.touched) field("remaining").value = suggestion.total_weight;
+      }
+    };
+    ["material", "color", "manufacturer"].forEach((id) => {
+      field(id).addEventListener("change", refresh);
+      field(`${id}-custom`).addEventListener("input", refresh);
+    });
+    refresh();
+  }
+
+  _choiceValue(modal, id) {
+    const select = modal.querySelector(`#${id}`);
+    return select.value === "__custom__" ? modal.querySelector(`#${id}-custom`).value.trim() : select.value;
   }
 
   _boxOptions(selected, exclude) {
@@ -848,42 +914,43 @@ class FilamentManagerCard extends HTMLElement {
         actions
       );
     } else if (kind === "add") {
-      let choices = { materials: [], colors: [], manufacturers: [], diameters: ["1.75"] };
+      let choices = { materials: [], colors: [], manufacturers: [], diameters: ["1.75"], default_material: "", default_color: "" };
       try {
         choices = await this._hass.callWS({ type: `${PLATFORM}/options` });
       } catch (err) {
         /* the lists are only suggestions */
       }
-      const list = (id, items) => `<datalist id="${id}">${items.map((i) => `<option value="${esc(i)}"></option>`).join("")}</datalist>`;
       const boxes = this._boxOptions(box || null, null);
       if (!boxes) {
         this._showModal("Spule anlegen", "Lege zuerst eine Filamentbox an.", "", []);
         return;
       }
-      this._showModal(
+      const modal = this._showModal(
         "Spule anlegen",
         "",
         `<label for="box">Box</label><select id="box">${boxes}</select>
-         <label for="material">Material</label><input id="material" list="materials" autocomplete="off" />
-         <label for="color">Farbe</label><input id="color" list="colors" autocomplete="off" />
-         <label for="manufacturer">Hersteller (optional)</label><input id="manufacturer" list="manufacturers" autocomplete="off" />
+         ${this._choiceField("material", "Material", choices.materials, { selected: choices.default_material })}
+         ${this._choiceField("color", "Farbe", choices.colors, { selected: choices.default_color })}
+         ${this._choiceField("manufacturer", "Hersteller", choices.manufacturers, { selected: choices.manufacturers[0] || "" })}
          <label for="diameter">Durchmesser</label><select id="diameter">${choices.diameters.map((d) => `<option value="${esc(d)}">${esc(d)} mm</option>`).join("")}</select>
-         <label for="name">Name (leer = automatisch)</label><input id="name" autocomplete="off" />
-         <label for="total">Gesamtgewicht in g (leer = Vorschlag)</label><input id="total" type="number" min="0" />
-         <label for="remaining">Restgewicht in g (leer = voll)</label><input id="remaining" type="number" min="0" />
-         ${list("materials", choices.materials)}${list("colors", choices.colors)}${list("manufacturers", choices.manufacturers)}`,
+         <label for="name">Name</label><input id="name" data-suggest autocomplete="off" />
+         <label for="total">Gesamtgewicht in g</label><input id="total" data-suggest type="number" min="0" />
+         <label for="remaining">Restgewicht in g</label><input id="remaining" data-suggest type="number" min="0" />`,
         [
           {
             label: "Anlegen",
             kind: "primary",
             run: (m) => {
               const value = (id) => m.querySelector(`#${id}`).value.trim();
-              if (!value("material") || !value("color")) throw new Error("Material und Farbe angeben.");
+              const material = this._choiceValue(m, "material");
+              const color = this._choiceValue(m, "color");
+              const manufacturer = this._choiceValue(m, "manufacturer");
+              if (!material || !color || !manufacturer) throw new Error("Material, Farbe und Hersteller angeben.");
               const data = {
                 box_device_id: value("box"),
-                material: value("material"),
-                color: value("color"),
-                manufacturer: value("manufacturer"),
+                material,
+                color,
+                manufacturer,
                 diameter: value("diameter"),
               };
               if (value("name")) data.name = value("name");
@@ -894,6 +961,8 @@ class FilamentManagerCard extends HTMLElement {
           },
         ]
       );
+      this._wireChoices(modal);
+      this._wireSuggestions(modal);
     }
   }
 }

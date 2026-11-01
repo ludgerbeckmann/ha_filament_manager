@@ -20,7 +20,7 @@ from homeassistant.helpers import device_registry as dr
 from .ams import slot_entities
 from .boxes import spool_subentries
 from .cloud import hub_entries
-from .config_flow import _suggest_name
+from .config_flow import _sorted_options, _suggest_name
 from .const import (
     COLOR_OPTIONS,
     CONF_AMS_SLOT,
@@ -31,6 +31,7 @@ from .const import (
     CONF_MATERIAL,
     CONF_TOTAL_WEIGHT,
     DEFAULT_DIAMETER,
+    DEFAULT_MATERIAL,
     DIAMETER_OPTIONS,
     DOMAIN,
     MANUFACTURER_OPTIONS,
@@ -55,7 +56,7 @@ ADD_SCHEMA = vol.Schema(
         vol.Required("box_device_id"): cv.string,
         vol.Required(CONF_MATERIAL): vol.All(cv.string, vol.Length(min=1)),
         vol.Required(CONF_COLOR): vol.All(cv.string, vol.Length(min=1)),
-        vol.Optional(CONF_MANUFACTURER, default=""): cv.string,
+        vol.Required(CONF_MANUFACTURER): vol.All(cv.string, vol.Length(min=1)),
         vol.Optional(CONF_DIAMETER, default=DEFAULT_DIAMETER): cv.string,
         vol.Optional("name"): cv.string,
         vol.Optional(CONF_TOTAL_WEIGHT): _WEIGHT,
@@ -176,6 +177,7 @@ def async_register_services(hass: HomeAssistant) -> None:
 def async_register_websocket(hass: HomeAssistant) -> None:
     """Let the card ask for the choices its add/load dialogs offer."""
     websocket_api.async_register_command(hass, websocket_options)
+    websocket_api.async_register_command(hass, websocket_suggest)
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/options"})
@@ -185,10 +187,34 @@ def websocket_options(hass: HomeAssistant, connection: websocket_api.ActiveConne
     connection.send_result(
         msg["id"],
         {
-            "materials": MATERIAL_OPTIONS,
-            "colors": COLOR_OPTIONS,
-            "manufacturers": MANUFACTURER_OPTIONS,
+            # Sorted like the dropdowns of the setup dialog, catch-all last.
+            "materials": _sorted_options(MATERIAL_OPTIONS),
+            "colors": _sorted_options(COLOR_OPTIONS),
+            "manufacturers": _sorted_options(MANUFACTURER_OPTIONS),
+            "default_material": DEFAULT_MATERIAL,
+            "default_color": COLOR_OPTIONS[0],
             "diameters": [option["value"] for option in DIAMETER_OPTIONS],
             "slots": slot_entities(hass),
+        },
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/suggest",
+        vol.Required(CONF_MATERIAL): cv.string,
+        vol.Required(CONF_COLOR): cv.string,
+        vol.Required(CONF_MANUFACTURER): cv.string,
+    }
+)
+@callback
+def websocket_suggest(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The name and total weight the setup dialog would suggest for these choices."""
+    data = {key: msg[key].strip() for key in (CONF_MATERIAL, CONF_COLOR, CONF_MANUFACTURER)}
+    connection.send_result(
+        msg["id"],
+        {
+            "name": _suggest_name(data),
+            "total_weight": suggested_total_weight(data[CONF_MANUFACTURER], data[CONF_MATERIAL]),
         },
     )
