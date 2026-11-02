@@ -83,6 +83,7 @@ class FilamentManagerCard extends HTMLElement {
     if (
       previous.group_by !== this._config.group_by ||
       Boolean(previous.only_in_printer) !== Boolean(this._config.only_in_printer) ||
+      previous.appearance !== this._config.appearance ||
       Boolean(previous.dark_background) !== Boolean(this._config.dark_background) ||
       Boolean(previous.collapse_boxes) !== Boolean(this._config.collapse_boxes) ||
       previous.show_stock !== this._config.show_stock
@@ -104,6 +105,21 @@ class FilamentManagerCard extends HTMLElement {
   _groupBy() {
     const value = this._config && this._config.group_by;
     return value === "material" || value === "none" ? value : "box";
+  }
+
+  /**
+   * The colour scheme of the card: "dark" or "light" to force one, null to
+   * follow the Home Assistant theme (the default). `appearance: system` follows
+   * the device's setting; `dark_background: true` is the old spelling of `dark`.
+   */
+  _scheme() {
+    const config = this._config || {};
+    const appearance = config.appearance || (config.dark_background ? "dark" : "theme");
+    if (appearance === "dark" || appearance === "light") return appearance;
+    if (appearance === "system") {
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    return null;
   }
 
   _showStock() {
@@ -129,10 +145,20 @@ class FilamentManagerCard extends HTMLElement {
 
   connectedCallback() {
     this._subscribe();
+    // "System" follows the device: draw again when its light/dark setting changes.
+    if (window.matchMedia && !this._schemeQuery) {
+      this._schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      this._onSchemeChange = () => this._renderIfReady();
+      this._schemeQuery.addEventListener("change", this._onSchemeChange);
+    }
     this._renderIfReady();
   }
 
   disconnectedCallback() {
+    if (this._schemeQuery) {
+      this._schemeQuery.removeEventListener("change", this._onSchemeChange);
+      this._schemeQuery = null;
+    }
     const unsubscribe = this._unsubscribe;
     this._unsubscribe = null;
     if (unsubscribe) unsubscribe.then((unsub) => unsub()).catch(() => {});
@@ -176,7 +202,7 @@ class FilamentManagerCard extends HTMLElement {
     if (!this._hass || !this._config) return;
     const data = this._collectData();
     // Avoid tearing down/rebuilding the DOM on every state tick when nothing relevant changed.
-    const signature = JSON.stringify([data, this._error]);
+    const signature = JSON.stringify([data, this._error, this._scheme()]);
     if (signature === this._lastSignature) return;
     this._lastSignature = signature;
     this._data = data;
@@ -435,14 +461,27 @@ class FilamentManagerCard extends HTMLElement {
 
         ha-card { padding: 16px; }
         /* Like the Bambu Lab cards: a black card with light text, whatever the theme. */
-        ha-card.dark {
+        .scheme-dark {
           --ha-card-background: #101114;
           --card-background-color: #101114;
           --primary-text-color: #ffffff;
           --secondary-text-color: #aeb2bb;
           --divider-color: rgba(255, 255, 255, 0.16);
-          background: #101114;
-          color: #ffffff;
+          --secondary-background-color: rgba(255, 255, 255, 0.08);
+          color-scheme: dark;
+        }
+        .scheme-light {
+          --ha-card-background: #ffffff;
+          --card-background-color: #ffffff;
+          --primary-text-color: #212121;
+          --secondary-text-color: #727272;
+          --divider-color: #e0e0e0;
+          --secondary-background-color: rgba(0, 0, 0, 0.06);
+          color-scheme: light;
+        }
+        ha-card.scheme-dark, ha-card.scheme-light {
+          background: var(--ha-card-background);
+          color: var(--primary-text-color);
         }
         .header {
           display: flex;
@@ -622,7 +661,7 @@ class FilamentManagerCard extends HTMLElement {
         .modal input[hidden], .modal div[hidden] { display: none; }
 
       </style>
-      <ha-card class="${this._config.dark_background ? "dark" : ""}">
+      <ha-card class="${this._scheme() ? `scheme-${this._scheme()}` : ""}">
         ${this._renderHeader(title)}
         ${body}
         ${buttons}
@@ -664,7 +703,10 @@ class FilamentManagerCard extends HTMLElement {
     });
 
     // A dialog that is open survives re-renders (and keeps what was typed).
-    if (this._modalEl) this.shadowRoot.appendChild(this._modalEl);
+    if (this._modalEl) {
+      this._modalEl.className = `modal-backdrop ${this._scheme() ? `scheme-${this._scheme()}` : ""}`;
+      this.shadowRoot.appendChild(this._modalEl);
+    }
   }
 
   // ------------------------------------------------------------------ dialogs
@@ -709,7 +751,7 @@ class FilamentManagerCard extends HTMLElement {
   _showModal(title, intro, fields, actions) {
     this._closeModal();
     const backdrop = document.createElement("div");
-    backdrop.className = "modal-backdrop";
+    backdrop.className = `modal-backdrop ${this._scheme() ? `scheme-${this._scheme()}` : ""}`;
     backdrop.innerHTML = `<div class="modal">
       <h3>${esc(title)}</h3>
       ${intro ? `<p>${esc(intro)}</p>` : ""}
@@ -1281,10 +1323,13 @@ class FilamentManagerCardEditor extends HTMLElement {
           <input id="show_stock" type="checkbox" />
           Vorrat (verschlossene Spulen) anzeigen
         </label>
-        <label class="option">
-          <input id="dark_background" type="checkbox" />
-          Dunklen Hintergrund verwenden (wie die Bambu-Lab-Karten)
-        </label>
+        <label for="appearance" class="spaced">Darstellung</label>
+        <select id="appearance">
+          <option value="theme">Wie das Theme von Home Assistant (Standard)</option>
+          <option value="light">Hell</option>
+          <option value="dark">Dunkel (wie die Bambu-Lab-Karten)</option>
+          <option value="system">Wie die Einstellung des Geräts (System)</option>
+        </select>
       </div>
     `;
 
@@ -1300,8 +1345,11 @@ class FilamentManagerCardEditor extends HTMLElement {
     this.shadowRoot.querySelector("#show_stock").addEventListener("change", (event) => {
       this._updateConfig("show_stock", event.target.checked ? undefined : false);
     });
-    this.shadowRoot.querySelector("#dark_background").addEventListener("change", (event) => {
-      this._updateConfig("dark_background", event.target.checked || undefined);
+    this.shadowRoot.querySelector("#appearance").addEventListener("change", (event) => {
+      const config = { ...this._config };
+      delete config.dark_background; // replaced by `appearance`
+      this._config = config;
+      this._updateConfig("appearance", event.target.value === "theme" ? undefined : event.target.value);
     });
     this.shadowRoot.querySelector("#group_by").addEventListener("change", (event) => {
       this._updateConfig("group_by", event.target.value === "box" ? undefined : event.target.value);
@@ -1316,7 +1364,8 @@ class FilamentManagerCardEditor extends HTMLElement {
     }
     this.shadowRoot.querySelector("#collapse").checked = Boolean(this._config.collapse_boxes);
     this.shadowRoot.querySelector("#only_in_printer").checked = Boolean(this._config.only_in_printer);
-    this.shadowRoot.querySelector("#dark_background").checked = Boolean(this._config.dark_background);
+    this.shadowRoot.querySelector("#appearance").value =
+      this._config.appearance || (this._config.dark_background ? "dark" : "theme");
     this.shadowRoot.querySelector("#show_stock").checked = this._config.show_stock !== false;
     this.shadowRoot.querySelector("#group_by").value = ["material", "none"].includes(this._config.group_by)
       ? this._config.group_by
