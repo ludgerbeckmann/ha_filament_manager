@@ -208,6 +208,16 @@ die Warnung endet weiterhin sofort. Auch sie richtet sich nach dem Material:
 
 `0` warnt sofort.
 
+Einordnung: Eine allgemeingültige Norm gibt es nicht, die Hersteller sind sich
+nicht einig. Das [Bambu-Lab-Wiki](https://wiki.bambulab.com/en/filament-acc/acc/sealed-box)
+nennt für die Lagerung in der Dichtbox „unter 20 % rF“,
+[UltiMaker](https://support.ultimaker.com/articles/Knowledge/1667410781492) hält
+feuchteempfindliche Materialien (Nylon, TPU 95A, PVA) unter 50 % und die meisten
+anderen am besten bei 10–30 %, [Snapmaker](https://support.snapmaker.com/hc/en-us/articles/4417380565911-3-Filament-Library)
+nennt 40 %; in der Community gilt PLA oft schon bei etwa 40 % als unkritisch. Die
+Werte oben sind bewusst eher großzügig – wer strenger lagern will, trägt in der
+Box einen eigenen (niedrigeren) Grenzwert ein.
+
 Das sind Faustwerte, keine Normen – der Wert bleibt frei änderbar, und die
 Angaben deines Filamentherstellers haben Vorrang.
 
@@ -276,7 +286,7 @@ group_by: box         # optional: box (Standard) | material | none
 only_in_printer: true # optional: nur Spulen anzeigen, die im Drucker (AMS) stecken
 show_stock: false     # optional: Vorrat ausblenden (Standard: sichtbar)
 collapse_boxes: true  # optional: Gruppen starten eingeklappt (Standard: false)
-dark_background: true # optional: schwarzer Kartenhintergrund wie bei den Bambu-Lab-Karten
+appearance: dark      # optional: theme (Standard: wie Home Assistant) | light | dark | system
 ```
 
 Die Spulen einer Box stehen unter einer Kopfzeile mit Boxname und
@@ -290,6 +300,11 @@ Spulen stehen im Bereich **Vorrat**.
   zeigt dann zusätzlich Box und Luftfeuchtigkeit), `none` zeigt eine flache
   Liste.
 - `only_in_printer` zeigt nur Spulen im Drucker (und blendet den Vorrat aus).
+
+`appearance` legt die Darstellung fest: `theme` folgt dem Theme von Home
+Assistant (Standard), `light` ist immer hell, `dark` immer dunkel (wie die
+Bambu-Lab-Karten), `system` folgt der Hell/Dunkel-Einstellung des Geräts. Die
+ältere Option `dark_background: true` gilt weiter wie `appearance: dark`.
 
 Alle Optionen lassen sich auch im visuellen Karten-Editor setzen. Ein Klick
 auf eine Zeile öffnet die Restmenge (dort direkt editierbar), ein Klick auf das
