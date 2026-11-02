@@ -376,6 +376,14 @@
         "show_filament": {
           "name": "Name the spool in use",
           "description": "Appends the spool of the active AMS tray to the message."
+        },
+        "name": {
+          "name": "Display name",
+          "description": "Shown as the title; empty = the printer's name, without its serial number."
+        },
+        "countdown": {
+          "name": "Countdown",
+          "description": "Shows the remaining time as a running countdown on the device (like the Bambu app) instead of a text."
         }
       }
     },

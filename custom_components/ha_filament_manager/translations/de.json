@@ -376,6 +376,14 @@
         "show_filament": {
           "name": "Verwendete Spule nennen",
           "description": "Hängt die Spule des aktiven AMS-Slots an die Meldung an."
+        },
+        "name": {
+          "name": "Anzeigename",
+          "description": "Wird als Titel gezeigt; leer = Name des Druckers, ohne Seriennummer."
+        },
+        "countdown": {
+          "name": "Countdown",
+          "description": "Zeigt die Restzeit als laufenden Countdown auf dem Gerät (wie die Bambu-App) statt als Text."
         }
       }
     },

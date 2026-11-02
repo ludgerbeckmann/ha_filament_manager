@@ -111,8 +111,10 @@ PRINT_NOTIFICATION_SCHEMA = vol.Schema(
         vol.Optional("enabled"): cv.boolean,
         vol.Optional("printer"): vol.Any(None, "", cv.string),
         vol.Optional("targets"): vol.All(cv.ensure_list, [cv.string]),
+        vol.Optional("name"): cv.string,
         vol.Optional("url"): cv.string,
         vol.Optional("show_filament"): cv.boolean,
+        vol.Optional("countdown"): cv.boolean,
     }
 )
 EMPTY_SCHEMA = vol.Schema({})

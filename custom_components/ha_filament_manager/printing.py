@@ -14,6 +14,7 @@ Nothing is sent unless it is switched on and has targets.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 import logging
 import re
 from typing import Any
@@ -23,6 +24,7 @@ from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.util import dt as dt_util
 
 from .ams import BAMBULAB_DOMAIN
 from .const import DOMAIN
@@ -39,6 +41,19 @@ SETTLE_SECONDS = 0.5
 TEST_CLEAR_SECONDS = 30
 GREEN = "#00AE42"
 ORANGE = "#FF9800"
+
+
+def friendly_name(device_name: str, serial: str) -> str:
+    """"P1S_01P09C482100602" (how ha-bambulab names a printer) -> "Bambu Lab P1S".
+
+    Any other name keeps its words and only loses the serial number.
+    """
+    pattern = rf"[\s_\-]*{re.escape(serial)}[\s_\-]*"
+    model = re.fullmatch(rf"(?P<model>[A-Za-z0-9]+(?: [A-Za-z0-9]+)?){pattern}", device_name, flags=re.IGNORECASE)
+    if model:
+        name = model.group("model")
+        return name if "bambu" in name.casefold() else f"Bambu Lab {name}"
+    return re.sub(pattern, " ", device_name, flags=re.IGNORECASE).strip() or device_name
 
 
 @dataclass(frozen=True)
@@ -59,8 +74,9 @@ def printers(hass: HomeAssistant) -> list[Printer]:
         if not (match := _STATUS_RE.match(entry.unique_id or "")):
             continue
         device = dev_reg.async_get(entry.device_id) if entry.device_id else None
-        name = (device and (device.name_by_user or device.name)) or match.group("serial")
-        found.append(Printer(match.group("serial"), name))
+        serial = match.group("serial")
+        raw = (device and (device.name_by_user or device.name)) or serial
+        found.append(Printer(serial, friendly_name(raw, serial)))
     return sorted(found, key=lambda printer: printer.name.casefold())
 
 
@@ -212,7 +228,7 @@ class PrintNotifier:
                 await self._send(settings.targets, self._clear_payload(printer))
                 ok = status == "finish"
                 final: dict[str, Any] = {
-                    "title": f"{'✅' if ok else '❌'} {printer.name} – Druck {'fertig' if ok else 'fehlgeschlagen'}",
+                    "title": f"{'✅' if ok else '❌'} {self._title(printer)} – Druck {'fertig' if ok else 'fehlgeschlagen'}",
                     "message": self._job(printer) or " ",
                 }
                 if settings.url:
@@ -227,6 +243,17 @@ class PrintNotifier:
 
     # --------------------------------------------------------------- payloads
 
+    def _title(self, printer: Printer) -> str:
+        """The name shown in the notification: the user's own, else the printer's."""
+        return self._manager.print_settings.name or printer.name
+
+    def _eta_text(self, minutes: float) -> str:
+        """"fertig ca. 15:04" (with the date when it is not today)."""
+        end = dt_util.as_local(dt_util.utcnow() + timedelta(minutes=minutes))
+        if end.date() == dt_util.as_local(dt_util.utcnow()).date():
+            return f"fertig ca. {end:%H:%M}"
+        return f"fertig ca. {end.day}.{end.month}. {end:%H:%M}"
+
     def _tag(self, printer: Printer) -> str:
         return f"{DOMAIN}_print_{printer.serial}"
 
@@ -238,15 +265,19 @@ class PrintNotifier:
         except ValueError:
             progress = 0
         job = override.get("job", self._job(printer))
-        remaining = format_remaining(override.get("minutes", self._remaining_minutes(printer)))
+        minutes = override.get("minutes", self._remaining_minutes(printer))
+        remaining = format_remaining(minutes)
+        counting = settings.countdown and status == "running" and minutes > 0
         if status == "pause":
             head = "⏸ Pausiert"
         elif status == "prepare":
             head = "Vorbereitung"
+        elif counting:  # the countdown shows the time left; the message says when it ends
+            head = f"Druckt · {self._eta_text(minutes)}"
         else:
-            head = f"noch {remaining}" if remaining else ""
+            head = f"noch {remaining}" if remaining else "Druckt"
         filament = override.get("filament", self._filament() if settings.show_filament else "")
-        message = " · ".join(part for part in (head, job, filament) if part) or printer.name
+        message = " · ".join(part for part in (head, job, filament) if part) or self._title(printer)
         data: dict[str, Any] = {
             "tag": self._tag(printer),
             "live_update": True,
@@ -257,9 +288,14 @@ class PrintNotifier:
             "notification_icon_color": ORANGE if status == "pause" else GREEN,
             "silent": True,
         }
+        if counting:
+            # Ticks on the device, so no update is needed every minute.
+            data["chronometer"] = True
+            data["when"] = int(dt_util.utcnow().timestamp() + minutes * 60)
+            data["when_relative"] = False
         if settings.url:
             data["url"] = settings.url
-        return {"title": printer.name, "message": message, "data": data}
+        return {"title": self._title(printer), "message": message, "data": data}
 
     def _clear_payload(self, printer: Printer) -> dict[str, Any]:
         return {"message": "clear_notification", "data": {"tag": self._tag(printer)}}

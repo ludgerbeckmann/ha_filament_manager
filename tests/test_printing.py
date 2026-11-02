@@ -12,7 +12,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.ha_filament_manager.const import DOMAIN
-from custom_components.ha_filament_manager.printing import format_remaining, notify_services, printers
+from custom_components.ha_filament_manager.printing import format_remaining, friendly_name, notify_services, printers
 
 from .common import setup_inventory, setup_with_spool
 from .test_ams import SLOT, register_slot, set_slot
@@ -79,7 +79,13 @@ async def configured(hass: HomeAssistant, **settings):
     set_print(hass, "idle")
     entry, runtime = await setup_inventory(hass)
     runtime.manager.set_print_settings(
-        **{"enabled": True, "targets": ["mobile_app_iphone", "mobile_app_ipad"], "url": "/3d-drucker", **settings}
+        **{
+            "enabled": True,
+            "targets": ["mobile_app_iphone", "mobile_app_ipad"],
+            "url": "/3d-drucker",
+            "countdown": False,  # the texts below are the ones without the running countdown
+            **settings,
+        }
     )
     await hass.async_block_till_done()
     return runtime
@@ -220,7 +226,7 @@ async def test_the_spool_in_use_is_named(hass: HomeAssistant, sent) -> None:
     set_print(hass, "idle")
     set_slot(hass, rfid=None)
     entry, manager = await setup_with_spool(hass, spool={"ams_slot": SLOT})
-    manager.set_print_settings(enabled=True, targets=["mobile_app_iphone"])
+    manager.set_print_settings(enabled=True, targets=["mobile_app_iphone"], countdown=False)
     await hass.async_block_till_done()
 
     hass.states.async_set(SLOT, "PLA Basic", {**hass.states.get(SLOT).attributes, "active": True})
@@ -242,7 +248,7 @@ async def test_a_missing_notify_service_does_not_stop_the_others(hass: HomeAssis
 
 
 async def test_the_test_notification_is_removed_again(hass: HomeAssistant, sent) -> None:
-    await configured(hass)
+    await configured(hass, countdown=False)
     await hass.services.async_call(DOMAIN, "test_print_notification", {}, blocking=True)
     assert len(sent) == 2
     assert sent[0][1]["message"] == "noch 1 h 5 min · Testdruck · PETG Rot (82 %)"
@@ -282,11 +288,62 @@ async def test_settings_are_saved_through_the_service_and_shown_in_the_snapshot(
         "enabled": True,
         "printer": SERIAL,
         "targets": ["mobile_app_iphone"],
+        "name": "",
         "url": "/3d",
         "show_filament": False,
+        "countdown": True,
         "printers": [{"serial": SERIAL, "name": "Bambu P1S"}],
         "notify_services": ["mobile_app_ipad", "mobile_app_iphone"],
     }
 
     await runtime.manager.async_flush()
     assert hass_storage[f"{DOMAIN}.data"]["data"]["print_notification"]["targets"] == ["mobile_app_iphone"]
+
+
+def test_the_printer_name_loses_its_serial_number() -> None:
+    assert friendly_name("P1S_01P09C482100602", "01P09C482100602") == "Bambu Lab P1S"
+    assert friendly_name("A1 mini 01P09C482100602", "01P09C482100602") == "Bambu Lab A1 mini"
+    assert friendly_name("Bambu P1S", "01P09C482100602") == "Bambu P1S"
+    assert friendly_name("Werkstatt-Drucker 01p09c482100602", "01P09C482100602") == "Werkstatt-Drucker"
+    assert friendly_name("01P09C482100602", "01P09C482100602") == "01P09C482100602"
+
+
+async def test_a_name_of_your_own_is_the_title(hass: HomeAssistant, sent) -> None:
+    await configured(hass, name="Drucker im Keller")
+    set_print(hass, "running", 42, minutes=65)
+    await settle(hass)
+    assert sent[0][1]["title"] == "Drucker im Keller"
+    sent.clear()
+    set_print(hass, "finish", 100)
+    await settle(hass)
+    assert sent[2][1]["title"] == "✅ Drucker im Keller – Druck fertig"
+
+
+async def test_the_countdown_runs_on_the_device(hass: HomeAssistant, sent, freezer) -> None:
+    freezer.move_to("2026-11-02 12:00:00+00:00")
+    await configured(hass, countdown=True)
+    set_print(hass, "running", 42, minutes=65)
+    await settle(hass)
+
+    payload = sent[0][1]
+    eta = dt_util.as_local(dt_util.utcnow() + timedelta(minutes=65)).strftime("%H:%M")
+    assert payload["message"] == f"Druckt · fertig ca. {eta} · Frame.3mf"
+    data = payload["data"]
+    assert data["chronometer"] is True
+    assert data["when_relative"] is False
+    assert data["when"] == int(dt_util.utcnow().timestamp()) + 65 * 60
+
+    # A paused print has no running clock.
+    set_print(hass, "pause", 42, minutes=65)
+    await settle(hass)
+    assert "chronometer" not in sent[-1][1]["data"]
+    assert sent[-1][1]["message"] == "⏸ Pausiert · Frame.3mf"
+
+
+async def test_the_end_of_a_long_print_names_the_day(hass: HomeAssistant, sent, freezer) -> None:
+    freezer.move_to("2026-11-02 12:00:00+00:00")
+    await configured(hass, countdown=True)
+    set_print(hass, "running", 10, minutes=60 * 30)
+    await settle(hass)
+    end = dt_util.as_local(dt_util.utcnow() + timedelta(minutes=60 * 30))
+    assert f"fertig ca. {end.day}.{end.month}. {end:%H:%M}" in sent[0][1]["message"]
