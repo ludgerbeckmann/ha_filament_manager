@@ -352,6 +352,37 @@
           "description": "Box id or its device."
         }
       }
+    },
+    "set_print_notification": {
+      "name": "Set up the print notification",
+      "description": "Shows the progress of a Bambu Lab print as a Live Activity on iPhone/iPad (live update on Android).",
+      "fields": {
+        "enabled": {
+          "name": "Enabled",
+          "description": ""
+        },
+        "printer": {
+          "name": "Printer",
+          "description": "Serial number of the printer; empty = the only one there is."
+        },
+        "targets": {
+          "name": "Targets",
+          "description": "Notify services of the Companion apps, e.g. mobile_app_iphone."
+        },
+        "url": {
+          "name": "Open on tap",
+          "description": "Dashboard path, e.g. /dashboard-3d-drucker."
+        },
+        "show_filament": {
+          "name": "Name the spool in use",
+          "description": "Appends the spool of the active AMS tray to the message."
+        }
+      }
+    },
+    "test_print_notification": {
+      "name": "Send a test notification",
+      "description": "Shows a sample Live Activity on the selected targets and removes it again after 30 seconds.",
+      "fields": {}
     }
   },
   "selector": {
@@ -395,6 +426,9 @@
     },
     "not_loaded": {
       "message": "Filament Manager is not set up."
+    },
+    "no_print_targets": {
+      "message": "Please choose at least one target for the print notification."
     }
   }
 }

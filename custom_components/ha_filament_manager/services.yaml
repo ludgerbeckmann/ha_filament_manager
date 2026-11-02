@@ -329,3 +329,31 @@ remove_box:
         device:
           integration: ha_filament_manager
           model: Filamentbox
+
+set_print_notification:
+  fields:
+    enabled:
+      required: false
+      selector:
+        boolean:
+    printer:
+      required: false
+      example: 01P09C482100602
+      selector:
+        text:
+    targets:
+      required: false
+      example: '["mobile_app_iphone"]'
+      selector:
+        object:
+    url:
+      required: false
+      example: /dashboard-3d-drucker
+      selector:
+        text:
+    show_filament:
+      required: false
+      selector:
+        boolean:
+
+test_print_notification:

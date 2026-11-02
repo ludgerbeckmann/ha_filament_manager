@@ -24,6 +24,7 @@ from .cloud_sync import CloudSync
 from .const import CARD_FILENAME, CARD_URL_PATH, CARD_VERSION, SIGNAL_SNAPSHOT_DIRTY
 from .entity import async_sync_devices
 from .manage import async_register_services
+from .printing import PrintNotifier
 from .migrate import CURRENT_VERSION, async_migrate_legacy
 from .runtime import FilamentRuntime
 from .store import FilamentManager
@@ -65,7 +66,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await manager.async_load()
     ams = AmsTracker(hass, manager)
     cloud = CloudSync(hass, manager, ams)
-    runtime = FilamentRuntime(manager, ams, cloud)
+    printing = PrintNotifier(hass, manager)
+    runtime = FilamentRuntime(manager, ams, cloud, printing)
     entry.runtime_data = runtime
 
     async_sync_devices(hass, entry, manager)
@@ -73,6 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Only follow the AMS and the cloud once the entities exist to receive their updates.
     await ams.async_start()
     await cloud.async_start()
+    printing.reconfigure()
 
     def _changed(structure: bool) -> None:
         if not structure:
@@ -82,12 +85,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             sync()
         ams.reconfigure()
         cloud.reconfigure()
+        printing.reconfigure()
         # Entity ids of new entities are only known now.
         async_dispatcher_send(hass, SIGNAL_SNAPSHOT_DIRTY)
 
     entry.async_on_unload(manager.async_add_listener(_changed))
     entry.async_on_unload(ams.async_stop)
     entry.async_on_unload(cloud.async_stop)
+    entry.async_on_unload(printing.async_stop)
     entry.async_on_unload(manager.async_flush)  # a change of the last second must not be lost
     return True
 

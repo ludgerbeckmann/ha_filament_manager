@@ -352,6 +352,37 @@
           "description": "Box-ID oder ihr Gerät."
         }
       }
+    },
+    "set_print_notification": {
+      "name": "Druck-Benachrichtigung einrichten",
+      "description": "Zeigt den Fortschritt eines Bambu-Lab-Drucks als Live Activity auf iPhone/iPad (Live-Update bei Android).",
+      "fields": {
+        "enabled": {
+          "name": "Aktiv",
+          "description": ""
+        },
+        "printer": {
+          "name": "Drucker",
+          "description": "Seriennummer des Druckers; leer = der einzige vorhandene."
+        },
+        "targets": {
+          "name": "Ziele",
+          "description": "Notify-Dienste der Companion-Apps, z. B. mobile_app_iphone."
+        },
+        "url": {
+          "name": "Beim Antippen öffnen",
+          "description": "Dashboard-Pfad, z. B. /dashboard-3d-drucker."
+        },
+        "show_filament": {
+          "name": "Verwendete Spule nennen",
+          "description": "Hängt die Spule des aktiven AMS-Slots an die Meldung an."
+        }
+      }
+    },
+    "test_print_notification": {
+      "name": "Testbenachrichtigung senden",
+      "description": "Zeigt eine Beispiel-Live-Activity auf den gewählten Zielen und entfernt sie nach 30 Sekunden wieder.",
+      "fields": {}
     }
   },
   "selector": {
@@ -395,6 +426,9 @@
     },
     "not_loaded": {
       "message": "Filament Manager ist nicht eingerichtet."
+    },
+    "no_print_targets": {
+      "message": "Bitte mindestens ein Ziel für die Druck-Benachrichtigung wählen."
     }
   }
 }

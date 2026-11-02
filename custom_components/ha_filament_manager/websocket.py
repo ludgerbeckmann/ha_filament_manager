@@ -28,6 +28,7 @@ from .const import (
     suggested_total_weight,
 )
 from .choices import sorted_options, suggest_name
+from .printing import notify_services, printers
 from .runtime import FilamentRuntime, get_runtime
 
 
@@ -97,7 +98,23 @@ def build_snapshot(hass: HomeAssistant, runtime: FilamentRuntime) -> dict[str, A
         if library
         else None
     )
-    return {"boxes": boxes, "spools": spools, "slots": slot_entities(hass), "cloud": cloud}
+    settings = manager.print_settings
+    print_notification = {
+        "enabled": settings.enabled,
+        "printer": settings.printer,
+        "targets": settings.targets,
+        "url": settings.url,
+        "show_filament": settings.show_filament,
+        "printers": [{"serial": printer.serial, "name": printer.name} for printer in printers(hass)],
+        "notify_services": notify_services(hass),
+    }
+    return {
+        "boxes": boxes,
+        "spools": spools,
+        "slots": slot_entities(hass),
+        "cloud": cloud,
+        "print_notification": print_notification,
+    }
 
 
 @callback

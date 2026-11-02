@@ -27,6 +27,8 @@ schlanke, native Home-Assistant-Integration ohne externen Server.
 - Optionale **Warnungen**: Luftfeuchtigkeit (pro Box, Grenzwert und
   Verzögerung automatisch nach dem empfindlichsten Material) und niedriger
   Bestand (pro Spule), jeweils mit Push- und/oder dauerhafter Benachrichtigung.
+- Optional eine **Druck-Benachrichtigung** als Live Activity (iPhone/iPad) auf
+  Basis der Bambu-Lab-Sensoren.
 - Optional **Kopplung mit Bambu Lab** (AMS-Slots, „Im Drucker") und **Abgleich
   der Restmengen mit der Bambu-Cloud** (nur lesend).
 
@@ -234,6 +236,31 @@ Sowohl die Luftfeuchtigkeitswarnung (pro Box) als auch die Bestandswarnung
 
 Beide Kanäle sind optional und unabhängig voneinander zuschaltbar, im
 Bearbeiten-Dialog der Box bzw. der Spule in der Karte.
+
+## Druck-Benachrichtigung (Live Activity)
+
+Auf Basis der Sensoren der Bambu-Lab-Integration (Druckstatus,
+Druckfortschritt, verbleibende Zeit, Name der Aufgabe) zeigt der Filament
+Manager den Fortschritt eines Drucks als **Live Activity auf iPhone und iPad**
+(bei Android als Live-Update) – eine eigene Automation ist nicht mehr nötig:
+
+- Während der Vorbereitung, des Drucks und der Pause bleibt **eine**
+  Benachrichtigung aktuell: Fortschrittsbalken, `noch 1 h 5 min · Auftrag`,
+  bei Pause `⏸ Pausiert · Auftrag`, grünes bzw. orangefarbenes Symbol. Auf
+  Wunsch steht dahinter die **verwendete Spule** (aus dem aktiven AMS-Slot,
+  wenn die Spule dort eingetragen ist), z. B. `· PETG Rot (82 %)`.
+- Am Ende wird die Live Activity entfernt und durch `✅ … Druck fertig` bzw.
+  `❌ … Druck fehlgeschlagen` ersetzt. Geht der Drucker auf Leerlauf oder
+  offline, verschwindet sie ebenfalls.
+- **Ziele** sind die Companion-Apps (`notify.mobile_app_…`), beliebig viele:
+  nur sie nehmen die Zusatzdaten einer Live Activity an. In den Einstellungen
+  der App müssen Live Activities erlaubt sein.
+
+Einrichten: Karte → Stift-Symbol → **Druck-Benachrichtigung** (Drucker, Ziele,
+optional eine Seite, die beim Antippen geöffnet wird). Mit **Speichern und
+testen** erscheint eine Beispiel-Live-Activity, die nach 30 Sekunden wieder
+verschwindet. Dieselben Einstellungen gibt es als Dienste
+`set_print_notification` und `test_print_notification`.
 
 ## Dashboard-Karte
 

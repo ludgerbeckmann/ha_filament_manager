@@ -93,6 +93,22 @@ class Spool:
         return cls(**{key: value for key, value in raw.items() if key in known})
 
 
+@dataclass
+class PrintSettings:
+    """The print notification: a Live Activity / progress notification for a Bambu Lab printer."""
+
+    enabled: bool = False
+    printer: str | None = None  # serial of the printer; None = the only one there is
+    targets: list[str] = field(default_factory=list)  # notify services, e.g. "mobile_app_iphone"
+    url: str = ""  # opened when the notification is tapped
+    show_filament: bool = True  # name the spool in use
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> PrintSettings:
+        known = {f.name for f in fields(cls)}
+        return cls(**{key: value for key, value in raw.items() if key in known})
+
+
 # What update_box / update_spool may change (everything but the id).
 BOX_FIELDS = {f.name for f in fields(Box)} - {"id"}
 SPOOL_FIELDS = {f.name for f in fields(Spool)} - {"id"}
@@ -106,6 +122,7 @@ class FilamentManager:
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.data")
         self.boxes: dict[str, Box] = {}
         self.spools: dict[str, Spool] = {}
+        self.print_settings = PrintSettings()
         self._listeners: list[Callable[[bool], None]] = []
 
     # ------------------------------------------------------------ persistence
@@ -115,11 +132,13 @@ class FilamentManager:
         raw = await self._store.async_load() or {}
         self.boxes = {box["id"]: Box.from_dict(box) for box in raw.get("boxes", [])}
         self.spools = {spool["id"]: Spool.from_dict(spool) for spool in raw.get("spools", [])}
+        self.print_settings = PrintSettings.from_dict(raw.get("print_notification", {}))
 
     def _data_to_save(self) -> dict[str, Any]:
         return {
             "boxes": [asdict(box) for box in self.boxes.values()],
             "spools": [asdict(spool) for spool in self.spools.values()],
+            "print_notification": asdict(self.print_settings),
         }
 
     @callback
@@ -345,6 +364,23 @@ class FilamentManager:
         spool = self._spool(spool_id)
         del self.spools[spool_id]
         self._changed(structure=True, spool_id=spool_id, box_id=spool.box_id)
+
+    # ------------------------------------------------------ print notification
+
+    @callback
+    def set_print_settings(self, **changes: Any) -> PrintSettings:
+        """Change the print notification's settings."""
+        allowed = {f.name for f in fields(PrintSettings)}
+        for key, value in changes.items():
+            if key not in allowed:
+                continue
+            if key == "printer":
+                value = value or None
+            elif key == "url":
+                value = (value or "").strip()
+            setattr(self.print_settings, key, value)
+        self._changed(structure=True)
+        return self.print_settings
 
     # --------------------------------------------------------------- snapshots
 
