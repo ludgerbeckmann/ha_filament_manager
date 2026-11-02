@@ -1489,6 +1489,7 @@ async def test_websocket_options_list_choices_and_slots(hass: HomeAssistant, has
     assert result["manufacturers"][-1] == "Sonstiges"
     assert result["default_material"] == "PETG" and "Schwarz" in result["colors"]
     assert "PLA" in result["materials"]
+    assert result["default_suggestion"] == {"name": "3DJake PETG Schwarz", "total_weight": 1000}
     assert result["diameters"] == ["1.75", "2.85"]
     assert result["slots"] == [SLOT]
 

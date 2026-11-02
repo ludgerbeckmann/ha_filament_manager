@@ -54,6 +54,7 @@ class FilamentRemainingWeightNumber(RestoreNumber):
     """The editable, persisted remaining weight of a filament spool."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "remaining_weight"
     _attr_native_unit_of_measurement = UnitOfMass.GRAMS
     _attr_device_class = NumberDeviceClass.WEIGHT

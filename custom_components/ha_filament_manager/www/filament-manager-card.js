@@ -237,8 +237,13 @@ class FilamentManagerCard extends HTMLElement {
     for (const [deviceId, entries] of Object.entries(byDevice)) {
       if (entries.some((e) => e.entity_id.startsWith("number."))) continue;
       const device = devices[deviceId];
+      // The box's spool-count sensor carries its maximum number of spools.
+      const countEntry = entries.find((e) => e.entity_id.startsWith("sensor."));
+      const countState = stateOf(countEntry && countEntry.entity_id);
+      const limit = countState ? Number(countState.attributes.spool_limit) : NaN;
       boxes[deviceId] = {
         deviceId,
+        spoolLimit: Number.isFinite(limit) && limit > 0 ? limit : null,
         name: (device && (device.name_by_user || device.name)) || "Filamentbox",
         ...readHumidity(entries),
       };
@@ -700,6 +705,7 @@ class FilamentManagerCard extends HTMLElement {
         const action = element.getAttribute("data-action");
         if (action === "toggle-edit") {
           this._editMode = !this._editMode;
+          if (this._editMode) this._loadOptions();
           this._render(this._data);
           return;
         }
@@ -730,6 +736,14 @@ class FilamentManagerCard extends HTMLElement {
     this._modalEl = null;
   }
 
+  /** The dialogs' choices; fetched when the edit mode starts, so the dialogs open at once. */
+  _loadOptions() {
+    this._optionsPromise = this._hass
+      .callWS({ type: `${PLATFORM}/options` })
+      .catch(() => ({ slots: [], materials: [], colors: [], manufacturers: [], diameters: ["1.75"] }));
+    return this._optionsPromise;
+  }
+
   async _call(service, data) {
     await this._hass.callService(PLATFORM, service, data);
   }
@@ -751,18 +765,27 @@ class FilamentManagerCard extends HTMLElement {
     </div>`;
     const modal = backdrop.querySelector(".modal");
     backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop) this._closeModal();
+      if (event.target === backdrop && !backdrop.dataset.busy) this._closeModal();
     });
     backdrop.querySelector('[data-modal="cancel"]').addEventListener("click", () => this._closeModal());
+    const buttons = [...backdrop.querySelectorAll("button")];
     actions.forEach((action, index) => {
-      backdrop.querySelector(`[data-modal="${index}"]`).addEventListener("click", async () => {
+      const button = backdrop.querySelector(`[data-modal="${index}"]`);
+      button.addEventListener("click", async () => {
+        if (backdrop.dataset.busy) return; // a second click must not start the action twice
         const errorBox = backdrop.querySelector(".error");
         errorBox.hidden = true;
+        backdrop.dataset.busy = "1";
+        buttons.forEach((b) => (b.disabled = true));
+        button.textContent = `${action.busy || action.label} …`;
         try {
           await action.run(modal);
           this._closeModal();
         } catch (err) {
-          errorBox.textContent = (err && (err.message || err.error)) || String(err);
+          delete backdrop.dataset.busy;
+          buttons.forEach((b) => (b.disabled = false));
+          button.textContent = action.label;
+          errorBox.textContent = this._errorText(err);
           errorBox.hidden = false;
         }
       });
@@ -835,7 +858,7 @@ class FilamentManagerCard extends HTMLElement {
       field(id).addEventListener("change", refresh);
       field(`${id}-custom`).addEventListener("input", refresh);
     });
-    refresh();
+    // The dialog already opens with the suggestions of its starting choices.
   }
 
   _choiceValue(modal, id) {
@@ -843,26 +866,50 @@ class FilamentManagerCard extends HTMLElement {
     return select.value === "__custom__" ? modal.querySelector(`#${id}-custom`).value.trim() : select.value;
   }
 
+  /** A box with a spool limit that is reached takes no more spools. */
+  _isFull(box) {
+    return (
+      box.spoolLimit !== null &&
+      this._data.spools.filter((spool) => spool.boxId === box.deviceId).length >= box.spoolLimit
+    );
+  }
+
+  /** The service errors of this integration, in German (the server's text is English). */
+  _errorText(err) {
+    const messages = {
+      box_full: "Diese Filamentbox ist bereits voll.",
+      box_unavailable: "Diese Filamentbox ist gerade nicht verfügbar.",
+      spool_not_found: "Die Spule wurde nicht gefunden.",
+      box_not_found: "Die Filamentbox wurde nicht gefunden.",
+      slot_unknown: "Das ist kein AMS-Slot der Bambu-Lab-Integration.",
+      remaining_exceeds_total: "Das Restgewicht darf nicht größer als das Gesamtgewicht sein.",
+    };
+    if (err && messages[err.translation_key]) return messages[err.translation_key];
+    const text = (err && (err.message || err.error)) || String(err);
+    return text.replace(/^Validation error:\s*/, "");
+  }
+
   _boxOptions(selected, exclude) {
     return this._boxList()
-      .filter((box) => box.deviceId !== exclude)
+      .filter((box) => box.deviceId !== exclude && !this._isFull(box))
       .map((box) => `<option value="${esc(box.deviceId)}" ${box.deviceId === selected ? "selected" : ""}>${esc(box.name)}</option>`)
       .join("");
   }
 
   async _openModal(kind, { device, box }) {
+    if (!this._optionsPromise) this._loadOptions();
     const spool = device ? this._spoolByDevice(device) : null;
     if (kind === "delete" && spool) {
       this._showModal(
         "Spule löschen",
         `„${spool.name}“ wirklich löschen? Die Entitäten und der Verlauf der Spule gehen verloren.`,
         "",
-        [{ label: "Löschen", kind: "danger", run: () => this._call("remove_spool", { device_id: device }) }]
+        [{ label: "Löschen", busy: "Wird gelöscht", kind: "danger", run: () => this._call("remove_spool", { device_id: device }) }]
       );
     } else if (kind === "move" && spool) {
       const others = this._boxOptions(null, spool.boxId);
       if (!others) {
-        this._showModal("Spule verschieben", "Es gibt keine andere Filamentbox.", "", []);
+        this._showModal("Spule verschieben", "Es gibt keine andere Filamentbox mit freiem Platz.", "", []);
         return;
       }
       this._showModal(
@@ -872,18 +919,14 @@ class FilamentManagerCard extends HTMLElement {
         [
           {
             label: "Verschieben",
+            busy: "Wird verschoben",
             kind: "primary",
             run: (m) => this._call("move_spool", { device_id: device, box_device_id: m.querySelector("#box").value }),
           },
         ]
       );
     } else if (kind === "load" && spool) {
-      let slots = [];
-      try {
-        slots = (await this._hass.callWS({ type: `${PLATFORM}/options` })).slots;
-      } catch (err) {
-        slots = [];
-      }
+      const slots = (await this._optionsPromise).slots || [];
       const hass = this._hass;
       const options = slots
         .map((slot) => {
@@ -898,12 +941,13 @@ class FilamentManagerCard extends HTMLElement {
       if (options) {
         actions.push({
           label: "In den Drucker laden",
+          busy: "Wird geladen",
           kind: "primary",
           run: (m) => this._call("load_spool", { device_id: device, slot: m.querySelector("#slot").value }),
         });
       }
       if (spool.inPrinter || spool.amsSlot) {
-        actions.push({ label: "Aus dem Drucker nehmen", run: () => this._call("unload_spool", { device_id: device }) });
+        actions.push({ label: "Aus dem Drucker nehmen", busy: "Wird herausgenommen", run: () => this._call("unload_spool", { device_id: device }) });
       }
       this._showModal(
         "Spule in den Drucker",
@@ -914,17 +958,13 @@ class FilamentManagerCard extends HTMLElement {
         actions
       );
     } else if (kind === "add") {
-      let choices = { materials: [], colors: [], manufacturers: [], diameters: ["1.75"], default_material: "", default_color: "" };
-      try {
-        choices = await this._hass.callWS({ type: `${PLATFORM}/options` });
-      } catch (err) {
-        /* the lists are only suggestions */
-      }
+      const choices = await this._optionsPromise;
       const boxes = this._boxOptions(box || null, null);
       if (!boxes) {
-        this._showModal("Spule anlegen", "Lege zuerst eine Filamentbox an.", "", []);
+        this._showModal("Spule anlegen", "Es gibt keine Filamentbox mit freiem Platz.", "", []);
         return;
       }
+      const first = choices.default_suggestion || {}; // what the dialog starts with, so it opens complete
       const modal = this._showModal(
         "Spule anlegen",
         "",
@@ -933,12 +973,13 @@ class FilamentManagerCard extends HTMLElement {
          ${this._choiceField("color", "Farbe", choices.colors, { selected: choices.default_color })}
          ${this._choiceField("manufacturer", "Hersteller", choices.manufacturers, { selected: choices.manufacturers[0] || "" })}
          <label for="diameter">Durchmesser</label><select id="diameter">${choices.diameters.map((d) => `<option value="${esc(d)}">${esc(d)} mm</option>`).join("")}</select>
-         <label for="name">Name</label><input id="name" data-suggest autocomplete="off" />
-         <label for="total">Gesamtgewicht in g</label><input id="total" data-suggest type="number" min="0" />
-         <label for="remaining">Restgewicht in g</label><input id="remaining" data-suggest type="number" min="0" />`,
+         <label for="name">Name</label><input id="name" autocomplete="off" value="${esc(first.name || "")}" />
+         <label for="total">Gesamtgewicht in g</label><input id="total" type="number" min="0" value="${esc(first.total_weight || "")}" />
+         <label for="remaining">Restgewicht in g</label><input id="remaining" type="number" min="0" value="${esc(first.total_weight || "")}" />`,
         [
           {
             label: "Anlegen",
+            busy: "Wird angelegt",
             kind: "primary",
             run: (m) => {
               const value = (id) => m.querySelector(`#${id}`).value.trim();
