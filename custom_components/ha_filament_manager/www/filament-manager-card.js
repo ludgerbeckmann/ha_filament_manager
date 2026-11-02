@@ -1,10 +1,13 @@
 /**
- * Filament Manager overview card.
+ * Filament Manager card.
  *
- * A dependency-free Lovelace card that auto-discovers every spool created by
- * the Filament Manager integration (via the entity/device registries already
- * present on `hass`) and renders remaining amount, material and color at a
- * glance - no YAML configuration required.
+ * A dependency-free Lovelace card for the Filament Manager inventory: boxes,
+ * the spools in them (remaining amount, material, color, humidity, printer
+ * status) and the stock of sealed spools. The integration pushes a snapshot of
+ * the inventory over the websocket (see websocket.py); no YAML configuration
+ * is required. The pencil in the header switches on the edit mode, in which
+ * spools and boxes are added, edited, moved, loaded into the printer and
+ * removed through the integration's services.
  */
 
 const PLATFORM = "ha_filament_manager";
@@ -56,113 +59,37 @@ function percentTone(percent) {
 class FilamentManagerCard extends HTMLElement {
   constructor() {
     super();
-    // Boxes the viewer has toggled by hand (device id -> collapsed?), which
-    // wins over the card's `collapse_boxes` default. A collapsed box hides
-    // its spools and shows only the header row (name + a small dot per
-    // spool's color). UI-only state, deliberately not part of
-    // `_data`/`_lastSignature` and lost on reload - the config default is
-    // what applies again then.
+    // What the integration last sent (boxes, spools, AMS slots); see websocket.py.
+    this._snapshot = null;
+    this._unsubscribe = null;
+    // Groups the viewer has toggled by hand (key -> collapsed?), which wins over
+    // the card's `collapse_boxes` default. UI-only state, lost on reload.
     this._boxToggles = new Map();
-    // Edit mode (the pencil in the header) shows the management actions: load
-    // a spool into the printer, move, delete, add. UI state only.
+    // Edit mode (the pencil in the header) shows the management actions.
     this._editMode = false;
     this._modalEl = null;
+    this._optionsPromise = null;
   }
 
-  /** Managing spools needs an admin (the services are not otherwise restricted). */
-  _canManage() {
-    return !(this._hass && this._hass.user && this._hass.user.is_admin === false);
-  }
+  // ------------------------------------------------------------------ config
 
   setConfig(config) {
     const previous = this._config;
     this._config = config || {};
     if (!previous) return;
     if (Boolean(previous.collapse_boxes) !== Boolean(this._config.collapse_boxes)) {
-      // The default changed (e.g. in the visual editor): apply it to every box.
-      this._boxToggles.clear();
+      this._boxToggles.clear(); // the default changed: apply it to every group
     }
     if (
       previous.group_by !== this._config.group_by ||
       Boolean(previous.only_in_printer) !== Boolean(this._config.only_in_printer) ||
       Boolean(previous.dark_background) !== Boolean(this._config.dark_background) ||
-      Boolean(previous.collapse_boxes) !== Boolean(this._config.collapse_boxes)
+      Boolean(previous.collapse_boxes) !== Boolean(this._config.collapse_boxes) ||
+      previous.show_stock !== this._config.show_stock
     ) {
       this._lastSignature = undefined;
       this._renderIfReady();
     }
-  }
-
-  /** "box" (default), "material" or "none"; anything else counts as "box". */
-  _groupBy() {
-    const value = this._config && this._config.group_by;
-    return value === "material" || value === "none" ? value : "box";
-  }
-
-  /**
-   * Turns the collected spools into what is drawn: header groups (a box, or a
-   * material) plus loose rows, honouring `group_by` and `only_in_printer`.
-   * Spools outside any box stay loose in box mode.
-   */
-  _layout(data) {
-    const wanted = (spool) => !(this._config && this._config.only_in_printer) || spool.inPrinter;
-    const mode = this._groupBy();
-    const byName = (a, b) => a.name.localeCompare(b.name);
-    const spools = data.spools.filter(wanted);
-
-    if (mode === "none") {
-      return { groups: [], loose: [...spools].sort(byName) };
-    }
-    if (mode === "material") {
-      const groups = new Map();
-      for (const spool of spools) {
-        const name = spool.material || "–";
-        if (!groups.has(name)) {
-          groups.set(name, { key: `material:${name}`, name, icon: "mdi:spool", spools: [], hasHumiditySensor: false });
-        }
-        groups.get(name).spools.push(spool);
-      }
-      const list = [...groups.values()].sort(byName);
-      list.forEach((group) => group.spools.sort(byName));
-      return { groups: list, loose: [] };
-    }
-    const groups = new Map();
-    const loose = [];
-    for (const spool of spools) {
-      const box = spool.boxId && data.boxes[spool.boxId];
-      if (!box) {
-        loose.push(spool);
-        continue;
-      }
-      if (!groups.has(box.deviceId)) {
-        groups.set(box.deviceId, { ...box, key: box.deviceId, icon: "mdi:archive-outline", spools: [] });
-      }
-      groups.get(box.deviceId).spools.push(spool);
-    }
-    const list = [...groups.values()].sort(byName);
-    list.forEach((group) => group.spools.sort(byName));
-    return { groups: list, loose: loose.sort(byName) };
-  }
-
-  _isBoxCollapsed(deviceId) {
-    return this._boxToggles.has(deviceId)
-      ? this._boxToggles.get(deviceId)
-      : Boolean(this._config && this._config.collapse_boxes);
-  }
-
-  set hass(hass) {
-    this._hass = hass;
-    this._renderIfReady();
-  }
-
-  getCardSize() {
-    const { groups, loose } = this._layout(this._data || { boxes: {}, spools: [] });
-    const rows =
-      groups.reduce(
-        (sum, group) => sum + (this._isBoxCollapsed(group.key) ? 1 : 1 + group.spools.length),
-        0
-      ) + loose.length;
-    return Math.max(1, rows) + 1;
   }
 
   static getStubConfig() {
@@ -173,267 +100,294 @@ class FilamentManagerCard extends HTMLElement {
     return document.createElement("filament-manager-card-editor");
   }
 
-  connectedCallback() {
+  /** "box" (default), "material" or "none"; anything else counts as "box". */
+  _groupBy() {
+    const value = this._config && this._config.group_by;
+    return value === "material" || value === "none" ? value : "box";
+  }
+
+  _showStock() {
+    return !(this._config && (this._config.show_stock === false || this._config.only_in_printer));
+  }
+
+  _isCollapsed(key) {
+    return this._boxToggles.has(key) ? this._boxToggles.get(key) : Boolean(this._config && this._config.collapse_boxes);
+  }
+
+  /** Managing needs an admin (the services are not otherwise restricted). */
+  _canManage() {
+    return !(this._hass && this._hass.user && this._hass.user.is_admin === false);
+  }
+
+  // -------------------------------------------------------------- connection
+
+  set hass(hass) {
+    this._hass = hass;
+    this._subscribe();
     this._renderIfReady();
   }
 
+  connectedCallback() {
+    this._subscribe();
+    this._renderIfReady();
+  }
+
+  disconnectedCallback() {
+    const unsubscribe = this._unsubscribe;
+    this._unsubscribe = null;
+    if (unsubscribe) unsubscribe.then((unsub) => unsub()).catch(() => {});
+  }
+
+  /** Follow the inventory: the integration pushes a snapshot after every change. */
+  _subscribe() {
+    if (this._unsubscribe || !this._hass || !this.isConnected || !this._hass.connection) return;
+    this._unsubscribe = this._hass.connection
+      .subscribeMessage(
+        (snapshot) => {
+          this._snapshot = snapshot;
+          this._error = null;
+          this._lastSignature = undefined;
+          this._renderIfReady();
+        },
+        { type: `${PLATFORM}/subscribe` }
+      )
+      .catch((err) => {
+        this._unsubscribe = null;
+        this._error = (err && err.message) || "Keine Verbindung zum Filament Manager.";
+        this._lastSignature = undefined;
+        this._renderIfReady();
+        throw err;
+      });
+    this._unsubscribe.catch(() => {});
+  }
+
+  getCardSize() {
+    const data = this._data;
+    if (!data) return 2;
+    const { groups, loose, stock } = this._layout(data);
+    const rows =
+      groups.reduce((sum, group) => sum + (this._isCollapsed(group.key) ? 1 : 1 + group.spools.length), 0) +
+      loose.length +
+      (stock.length ? 1 + stock.length : 0);
+    return Math.max(1, rows) + 1;
+  }
+
   _renderIfReady() {
-    if (!this._hass) return;
-    const data = this._collectData(this._hass);
-    // Avoid tearing down/rebuilding the DOM on every state tick when
-    // nothing relevant changed.
-    const signature = JSON.stringify(data);
+    if (!this._hass || !this._config) return;
+    const data = this._collectData();
+    // Avoid tearing down/rebuilding the DOM on every state tick when nothing relevant changed.
+    const signature = JSON.stringify([data, this._error]);
     if (signature === this._lastSignature) return;
     this._lastSignature = signature;
     this._data = data;
     this._render(data);
   }
 
-  /**
-   * Collects every spool and filament box created by this integration,
-   * grouping spools under the box they're assigned to (if any). A device is
-   * recognised as a box, rather than a spool, by not having a `number.*`
-   * entity - only spools have an editable remaining-weight number.
-   */
-  _collectData(hass) {
-    const entities = hass.entities || {};
-    const devices = hass.devices || {};
-    const stateOf = (entityId) => (entityId ? hass.states[entityId] : undefined);
+  // -------------------------------------------------------------------- data
 
-    const byDevice = {};
-    for (const entry of Object.values(entities)) {
-      if (entry.platform !== PLATFORM || !entry.device_id) continue;
-      (byDevice[entry.device_id] = byDevice[entry.device_id] || []).push(entry);
-    }
-
-    const readHumidity = (entries) => {
-      // A spool can own several binary sensors (low stock, in printer); the
-      // humidity one is the one that knows its source sensor.
-      const binaryState = entries
-        .filter((e) => e.entity_id.startsWith("binary_sensor."))
-        .map((e) => stateOf(e.entity_id))
-        .find((state) => state && "source_entity_id" in state.attributes);
-      // A spool that gets assigned to a filament box leaves its own,
-      // now-superseded humidity alert entity registered but no longer live
-      // (state "unavailable", no attributes) until the integration is
-      // reloaded/updated - treat that the same as "no sensor" rather than
-      // showing a stale/broken badge.
-      const isLive = !!binaryState;
-      return {
-        // Prefer the linked humidity sensor itself (shows the actual
-        // reading and its history) over our on/off binary_sensor as the tap
-        // target.
-        humidityEntityId: isLive ? binaryState.attributes.source_entity_id || binaryState.entity_id : null,
-        humidityValue:
-          isLive && typeof binaryState.attributes.current_humidity === "number"
-            ? binaryState.attributes.current_humidity
-            : null,
-        humidityAlert: isLive ? binaryState.state === "on" : false,
-        hasHumiditySensor: isLive,
-      };
-    };
+  /** The snapshot, enriched with the live humidity of every box (those states change all the time). */
+  _collectData() {
+    const snapshot = this._snapshot;
+    if (!snapshot) return null;
+    const states = this._hass.states || {};
 
     const boxes = {};
-    for (const [deviceId, entries] of Object.entries(byDevice)) {
-      if (entries.some((e) => e.entity_id.startsWith("number."))) continue;
-      const device = devices[deviceId];
-      // The box's spool-count sensor carries its maximum number of spools.
-      const countEntry = entries.find((e) => e.entity_id.startsWith("sensor."));
-      const countState = stateOf(countEntry && countEntry.entity_id);
-      const limit = countState ? Number(countState.attributes.spool_limit) : NaN;
-      boxes[deviceId] = {
-        deviceId,
-        spoolLimit: Number.isFinite(limit) && limit > 0 ? limit : null,
-        name: (device && (device.name_by_user || device.name)) || "Filamentbox",
-        ...readHumidity(entries),
+    for (const box of snapshot.boxes) {
+      const sensor = box.humidity_sensor ? states[box.humidity_sensor] : undefined;
+      const value = sensor ? Number(sensor.state) : NaN;
+      const alert = box.alert_entity ? states[box.alert_entity] : undefined;
+      boxes[box.id] = {
+        ...box,
+        hasHumidity: !!box.humidity_sensor,
+        humidityValue: Number.isFinite(value) ? value : null,
+        humidityAlert: !!alert && alert.state === "on",
       };
     }
+    const spools = snapshot.spools.map((spool) => ({
+      ...spool,
+      boxName: spool.box_id && boxes[spool.box_id] ? boxes[spool.box_id].name : null,
+    }));
+    return { boxes, spools, slots: snapshot.slots || [], cloud: snapshot.cloud };
+  }
 
-    const spools = [];
-    for (const [deviceId, entries] of Object.entries(byDevice)) {
-      const numberEntry = entries.find((e) => e.entity_id.startsWith("number."));
-      if (!numberEntry) continue;
+  /**
+   * What is drawn: header groups (a box, or a material) plus loose rows, the
+   * stock of sealed spools, honouring `group_by` and `only_in_printer`.
+   */
+  _layout(data) {
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    const onlyPrinter = Boolean(this._config && this._config.only_in_printer);
+    const inBoxes = data.spools.filter((spool) => !spool.sealed && (!onlyPrinter || spool.in_printer));
+    const stock = this._showStock() ? data.spools.filter((spool) => spool.sealed).sort(byName) : [];
+    const mode = this._groupBy();
 
-      const device = devices[deviceId];
-      const sensorEntries = entries.filter((e) => e.entity_id.startsWith("sensor."));
+    if (mode === "none") return { groups: [], loose: [...inBoxes].sort(byName), stock };
 
-      let percentState;
-      let materialState;
-      let colorState;
-      for (const entry of sensorEntries) {
-        const state = stateOf(entry.entity_id);
-        if (!state) continue;
-        if (state.attributes.unit_of_measurement === "%") {
-          percentState = state;
-        } else if (state.attributes.total_weight_g !== undefined) {
-          materialState = state;
-        } else {
-          colorState = state;
-        }
+    const groups = new Map();
+    for (const spool of inBoxes) {
+      const box = data.boxes[spool.box_id];
+      const key = mode === "material" ? `material:${spool.material || "–"}` : spool.box_id;
+      if (!groups.has(key)) {
+        groups.set(
+          key,
+          mode === "material"
+            ? { key, name: spool.material || "–", icon: "mdi:spool", spools: [], isBox: false }
+            : { ...box, key, icon: "mdi:archive-outline", spools: [], isBox: true }
+        );
       }
-
-      // The "in printer" sensor belongs to spools coupled to an AMS slot; it
-      // is recognised by its translation key, or - when the registry does
-      // not expose it - by the slot attribute it carries while available.
-      const printerEntry = entries.find(
-        (e) =>
-          e.entity_id.startsWith("binary_sensor.") &&
-          (e.translation_key === "in_printer" ||
-            (stateOf(e.entity_id) && "ams_slot" in stateOf(e.entity_id).attributes))
-      );
-      const printerState = stateOf(printerEntry && printerEntry.entity_id);
-
-      const numberState = stateOf(numberEntry.entity_id);
-      const percent = percentState ? Number(percentState.state) : null;
-
-      const spool = {
-        deviceId,
-        name: (device && (device.name_by_user || device.name)) || "Spule",
-        material: materialState ? materialState.state : null,
-        color: colorState ? colorState.state : null,
-        percent: percent !== null && !Number.isNaN(percent) ? percent : null,
-        remaining: numberState ? numberState.state : null,
-        unit: numberState ? numberState.attributes.unit_of_measurement : "g",
-        // The number entity is editable, so it's the more useful tap target
-        // than the (read-only) percentage sensor - fall back to it if for
-        // some reason the number entity is missing.
-        primaryEntityId: numberEntry.entity_id,
-        hasPrinter: !!printerEntry,
-        inPrinter: !!printerState && printerState.state === "on",
-        amsSlot: printerState && printerState.attributes.ams_slot ? printerState.attributes.ams_slot : null,
-        ...readHumidity(entries),
-      };
-
-      const boxId = device && device.via_device_id;
-      spool.boxId = boxId && boxes[boxId] ? boxId : null;
-      spool.boxName = spool.boxId ? boxes[boxId].name : null;
-      spools.push(spool);
+      groups.get(key).spools.push(spool);
     }
-
-    return { boxes, spools };
+    // In box mode empty boxes show up too (they can be filled or removed), unless a filter hides spools.
+    if (mode === "box" && !onlyPrinter) {
+      for (const box of Object.values(data.boxes)) {
+        if (!groups.has(box.id)) groups.set(box.id, { ...box, key: box.id, icon: "mdi:archive-outline", spools: [], isBox: true });
+      }
+    }
+    const list = [...groups.values()].sort(byName);
+    list.forEach((group) => group.spools.sort(byName));
+    return { groups: list, loose: [], stock };
   }
 
   _openMoreInfo(entityId) {
     if (!entityId) return;
-    const event = new CustomEvent("hass-more-info", {
-      bubbles: true,
-      composed: true,
-      detail: { entityId },
-    });
-    this.dispatchEvent(event);
+    this.dispatchEvent(new CustomEvent("hass-more-info", { bubbles: true, composed: true, detail: { entityId } }));
   }
 
-  _renderSpoolRow(spool, { indent = false, showBox = false } = {}) {
-    const percentLabel = spool.percent !== null ? `${spool.percent}%` : "–";
-    const tone = percentTone(spool.percent);
-    const barWidth = spool.percent !== null ? Math.max(0, Math.min(100, spool.percent)) : 0;
-    const weightLabel = spool.remaining !== null ? `${spool.remaining} ${spool.unit}` : "–";
-    const progressSub = `${percentLabel} · ${weightLabel}`;
+  // ---------------------------------------------------------------- rendering
 
-    const humidityValueLabel = spool.humidityValue !== null ? `${spool.humidityValue}%` : "–";
-    const humidityColumn = spool.hasHumiditySensor
-      ? `<div class="humidity-col" data-entity="${spool.humidityEntityId || ""}">
-           <ha-icon
-             class="humidity-badge ${spool.humidityAlert ? "alert" : ""}"
-             icon="${spool.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"
-             title="${spool.humidityAlert ? "Luftfeuchtigkeit zu hoch" : "Luftfeuchtigkeit OK"}"
-           ></ha-icon>
-           <span class="humidity-value ${spool.humidityAlert ? "alert" : ""}">${humidityValueLabel}</span>
-         </div>`
+  _swatch(spool, size = "") {
+    const color = swatchFor(spool.color);
+    const transparent = color === "transparent";
+    return `<span class="${size}swatch ${transparent ? "transparent" : ""}" style="${transparent ? "" : `background:${color}`}" title="${esc(spool.color)}"></span>`;
+  }
+
+  _actions(...buttons) {
+    return `<div class="actions">${buttons
+      .map(([action, icon, title, id]) => `<ha-icon data-action="${action}" data-id="${esc(id)}" icon="${icon}" title="${esc(title)}"></ha-icon>`)
+      .join("")}</div>`;
+  }
+
+  _renderSpoolRow(spool, data, { indent = false, showBox = false } = {}) {
+    const percent = spool.percent;
+    const tone = percentTone(percent);
+    const barWidth = percent !== null ? Math.max(0, Math.min(100, percent)) : 0;
+    const progressSub = `${percent !== null ? `${percent}%` : "–"} · ${spool.remaining_weight} g`;
+    const box = data.boxes[spool.box_id];
+
+    // In material/flat lists the humidity of the spool's box is shown per row.
+    const humidity =
+      showBox && box && box.hasHumidity
+        ? `<div class="humidity-col" data-entity="${esc(box.humidity_sensor)}">
+             <ha-icon class="humidity-badge ${box.humidityAlert ? "alert" : ""}" icon="${box.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}" title="${box.humidityAlert ? "Luftfeuchtigkeit zu hoch" : "Luftfeuchtigkeit OK"}"></ha-icon>
+             <span class="humidity-value ${box.humidityAlert ? "alert" : ""}">${box.humidityValue !== null ? `${box.humidityValue}%` : "–"}</span>
+           </div>`
+        : "";
+    const printer = spool.in_printer
+      ? `<ha-icon class="printer-badge" icon="mdi:printer-3d" title="Im Drucker${spool.ams_slot ? ` (${esc(spool.ams_slot)})` : ""}"></ha-icon>`
       : "";
-
-    const printerBadge = spool.inPrinter
-      ? `<ha-icon
-           class="printer-badge"
-           icon="mdi:printer-3d"
-           title="Im Drucker${spool.amsSlot ? ` (${spool.amsSlot})` : ""}"
-         ></ha-icon>`
-      : "";
-    const metaText =
-      [spool.material, spool.color, showBox ? spool.boxName : null].filter(Boolean).join(" · ") || "&nbsp;";
-
-    const swatchColor = swatchFor(spool.color);
-    const isSwatchTransparent = swatchColor === "transparent";
+    const meta = [spool.material, spool.color, showBox ? spool.boxName : null].filter(Boolean).join(" · ") || "&nbsp;";
+    const edit = this._editMode && this._canManage();
 
     return `
-      <div class="row ${indent ? "boxed" : ""}" data-entity="${spool.primaryEntityId || ""}">
-        <span
-          class="swatch ${isSwatchTransparent ? "transparent" : ""}"
-          style="${isSwatchTransparent ? "" : `background:${swatchColor}`}"
-          title="${spool.color || ""}"
-        ></span>
+      <div class="row ${indent ? "boxed" : ""}" data-entity="${esc(spool.entity_id)}">
+        ${this._swatch(spool)}
         <div class="info">
-          <div class="name">${spool.name}</div>
-          <div class="meta">${metaText}</div>
+          <div class="name">${esc(spool.name)}</div>
+          <div class="meta">${esc(meta)}</div>
         </div>
-        ${printerBadge}
+        ${printer}
         <div class="progress-col">
           <div class="track"><div class="fill" style="width:${barWidth}%;background:${tone}"></div></div>
-          <span class="progress-sub" style="color:${tone}">${progressSub}</span>
+          <span class="progress-sub" style="color:${tone}">${esc(progressSub)}</span>
         </div>
-        ${humidityColumn}
-        ${this._editMode && this._canManage() ? this._renderSpoolActions(spool) : ""}
+        ${humidity}
+        ${
+          edit
+            ? this._actions(
+                ["load", spool.in_printer ? "mdi:printer-3d-nozzle" : "mdi:printer-3d", "In den Drucker laden / herausnehmen", spool.id],
+                ["move", "mdi:swap-horizontal", "In andere Box verschieben", spool.id],
+                ["edit-spool", "mdi:pencil-outline", "Spule bearbeiten", spool.id],
+                ["delete-spool", "mdi:delete-outline", "Spule löschen", spool.id]
+              )
+            : ""
+        }
+      </div>`;
+  }
+
+  _renderStockRow(spool) {
+    const edit = this._editMode && this._canManage();
+    const meta = [spool.material, spool.color, spool.manufacturer, `${spool.total_weight} g`].filter(Boolean).join(" · ");
+    return `
+      <div class="row boxed stock-row">
+        ${this._swatch(spool)}
+        <div class="info">
+          <div class="name">${esc(spool.name)}</div>
+          <div class="meta">${esc(meta)}</div>
+        </div>
+        <span class="sealed-badge">verschlossen</span>
+        ${
+          edit
+            ? this._actions(
+                ["open", "mdi:package-variant", "Spule öffnen (in eine Box legen)", spool.id],
+                ["edit-spool", "mdi:pencil-outline", "Spule bearbeiten", spool.id],
+                ["delete-spool", "mdi:delete-outline", "Spule löschen", spool.id]
+              )
+            : ""
+        }
+      </div>`;
+  }
+
+  /** The header row of a group (box, material) or of the stock, with its dots when collapsed. */
+  _renderGroup(group, data) {
+    const collapsed = this._isCollapsed(group.key);
+    const showBox = this._groupBy() !== "box";
+    const edit = this._editMode && this._canManage();
+
+    const humidityValue = group.humidityValue !== null && group.humidityValue !== undefined ? `${Math.round(group.humidityValue)}%` : "–";
+    const humidity =
+      group.isBox && group.hasHumidity
+        ? `<span class="box-humidity ${group.humidityAlert ? "alert" : ""}" data-entity="${esc(group.humidity_sensor)}">
+             <ha-icon icon="${group.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"></ha-icon>
+             <span class="box-humidity-value">${humidityValue}</span>
+           </span>`
+        : "";
+    const dots = collapsed
+      ? `<div class="box-swatches">${group.spools.map((spool) => this._swatch(spool, "mini-")).join("")}</div>`
+      : "";
+    const limit = group.isBox && group.spool_limit ? ` (${group.spools.length}/${group.spool_limit})` : "";
+    const boxActions =
+      edit && group.isBox
+        ? this._actions(
+            ["edit-box", "mdi:cog-outline", "Box bearbeiten", group.id],
+            ...(group.count === 0 ? [["delete-box", "mdi:delete-outline", "Box löschen", group.id]] : [])
+          )
+        : "";
+
+    return `
+      <div class="box-header" data-toggle-box="${esc(group.key)}" title="${collapsed ? "Spulen anzeigen" : "Spulen ausblenden"}">
+        <ha-icon class="box-toggle" icon="${collapsed ? "mdi:chevron-right" : "mdi:chevron-down"}"></ha-icon>
+        <ha-icon class="box-icon" icon="${group.icon}"></ha-icon>
+        <span class="box-name">${esc(group.name)}${esc(limit)}</span>
+        ${dots}
+        ${humidity}
+        ${boxActions}
       </div>
+      ${collapsed ? "" : group.spools.map((spool) => this._renderSpoolRow(spool, data, { indent: true, showBox })).join("")}
+      ${!collapsed && !group.spools.length ? `<div class="empty-group">Keine Spulen</div>` : ""}
     `;
   }
 
-  _renderSpoolActions(spool) {
-    return `<div class="actions">
-      <ha-icon data-action="load" data-device="${esc(spool.deviceId)}" icon="${spool.inPrinter ? "mdi:printer-3d-nozzle" : "mdi:printer-3d"}" title="In den Drucker laden / herausnehmen"></ha-icon>
-      <ha-icon data-action="move" data-device="${esc(spool.deviceId)}" icon="mdi:swap-horizontal" title="In andere Box verschieben"></ha-icon>
-      <ha-icon data-action="delete" data-device="${esc(spool.deviceId)}" icon="mdi:delete-outline" title="Spule löschen"></ha-icon>
-    </div>`;
-  }
-
-  _renderBoxSection(box) {
-    const isCollapsed = this._isBoxCollapsed(box.key);
-    const showBox = this._groupBy() === "material";
-
-    // Whole percent, in a fixed-width slot: sensors report anything from "50"
-    // to "37.47", which would otherwise shift the color dots left and right
-    // from box to box. The exact value is in the sensor's detail dialog.
-    const humidityValueLabel = box.humidityValue !== null ? `${Math.round(box.humidityValue)}%` : "–";
-    const humidityBadge = box.hasHumiditySensor
-      ? `<span class="box-humidity ${box.humidityAlert ? "alert" : ""}" data-entity="${box.humidityEntityId || ""}">
-           <ha-icon icon="${box.humidityAlert ? "mdi:water-alert" : "mdi:water-check"}"></ha-icon>
-           <span class="box-humidity-value">${humidityValueLabel}</span>
-         </span>`
-      : "";
-
-    // Collapsed: a small dot per spool stands in for the hidden rows, so the
-    // box's contents are still visible at a glance.
-    const spoolSwatches = isCollapsed
-      ? `<div class="box-swatches">
-           ${box.spools
-             .map((spool) => {
-               const color = swatchFor(spool.color);
-               const isTransparent = color === "transparent";
-               return `<span
-                 class="mini-swatch ${isTransparent ? "transparent" : ""}"
-                 style="${isTransparent ? "" : `background:${color}`}"
-                 title="${spool.name}"
-               ></span>`;
-             })
-             .join("")}
-         </div>`
-      : "";
-
+  _renderStock(stock) {
+    const collapsed = this._isCollapsed("stock");
+    const dots = collapsed ? `<div class="box-swatches">${stock.map((spool) => this._swatch(spool, "mini-")).join("")}</div>` : "";
     return `
-      <div
-        class="box-header"
-        data-toggle-box="${box.key}"
-        title="${isCollapsed ? "Spulen anzeigen" : "Spulen ausblenden"}"
-      >
-        <ha-icon
-          class="box-toggle"
-          icon="${isCollapsed ? "mdi:chevron-right" : "mdi:chevron-down"}"
-        ></ha-icon>
-        <ha-icon class="box-icon" icon="${box.icon}"></ha-icon>
-        <span class="box-name">${box.name}</span>
-        ${spoolSwatches}
-        ${humidityBadge}
+      <div class="box-header" data-toggle-box="stock" title="${collapsed ? "Vorrat anzeigen" : "Vorrat ausblenden"}">
+        <ha-icon class="box-toggle" icon="${collapsed ? "mdi:chevron-right" : "mdi:chevron-down"}"></ha-icon>
+        <ha-icon class="box-icon" icon="mdi:package-variant-closed"></ha-icon>
+        <span class="box-name">Vorrat (${stock.length})</span>
+        ${dots}
       </div>
-      ${isCollapsed ? "" : box.spools.map((spool) => this._renderSpoolRow(spool, { indent: true, showBox })).join("")}
+      ${collapsed ? "" : stock.map((spool) => this._renderStockRow(spool)).join("")}
     `;
   }
 
@@ -441,39 +395,43 @@ class FilamentManagerCard extends HTMLElement {
     const manage = this._canManage();
     if (!title && !manage) return "";
     const toggle = manage
-      ? `<ha-icon
-           class="edit-toggle ${this._editMode ? "active" : ""}"
-           icon="${this._editMode ? "mdi:check" : "mdi:pencil"}"
-           data-action="toggle-edit"
-           title="${this._editMode ? "Bearbeiten beenden" : "Spulen verwalten"}"
-         ></ha-icon>`
+      ? `<ha-icon class="edit-toggle ${this._editMode ? "active" : ""}" icon="${this._editMode ? "mdi:check" : "mdi:pencil"}" data-action="toggle-edit" title="${this._editMode ? "Bearbeiten beenden" : "Spulen verwalten"}"></ha-icon>`
       : "";
     return `<div class="header"><span>${esc(title)}</span>${toggle}</div>`;
   }
 
   _render(data) {
-    if (!this.shadowRoot) {
-      this.attachShadow({ mode: "open" });
-    }
-
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     const title = this._config.title !== undefined ? this._config.title : "Filament Manager";
 
-    const { groups, loose } = this._layout(data);
-    const boxSections = groups.map((group) => this._renderBoxSection(group)).join("");
-    const ungroupedRows = loose
-      .map((spool) => this._renderSpoolRow(spool, { showBox: this._groupBy() === "none" }))
-      .join("");
-    const rows =
-      boxSections || ungroupedRows
-        ? `<div class="rows">${boxSections}${ungroupedRows}</div>`
+    let body;
+    if (this._error) {
+      body = `<div class="empty">${esc(this._error)}</div>`;
+    } else if (!data) {
+      body = `<div class="empty">Lade …</div>`;
+    } else {
+      const { groups, loose, stock } = this._layout(data);
+      const parts = [
+        ...groups.map((group) => this._renderGroup(group, data)),
+        ...loose.map((spool) => this._renderSpoolRow(spool, data, { showBox: true })),
+        ...(stock.length ? [this._renderStock(stock)] : []),
+      ];
+      body = parts.length
+        ? `<div class="rows">${parts.join("")}</div>`
         : `<div class="empty">${
             data.spools.length
               ? "Keine Spule im Drucker."
-              : 'Keine Filamentspulen gefunden. Über "Integration hinzufügen" → "Filament Manager" anlegen.'
+              : 'Noch keine Filamentspulen. Mit dem Stift-Symbol oben rechts eine Box und Spulen anlegen.'
           }</div>`;
+    }
+    const buttons =
+      this._editMode && this._canManage() && data
+        ? `<div class="add-row"><button class="add-btn" data-action="add-spool">Spule anlegen</button><button class="add-btn" data-action="add-box">Box anlegen</button></div>`
+        : "";
 
     this.shadowRoot.innerHTML = `
       <style>
+
         ha-card { padding: 16px; }
         /* Like the Bambu Lab cards: a black card with light text, whatever the theme. */
         ha-card.dark {
@@ -652,53 +610,44 @@ class FilamentManagerCard extends HTMLElement {
         .humidity-value { font-size: 0.75em; color: var(--secondary-text-color); }
         .humidity-value.alert { color: var(--error-color, #db4437); }
         .empty { color: var(--secondary-text-color); padding: 8px 0; }
+      
+        .empty-group { color: var(--secondary-text-color); padding: 4px 0 8px 24px; font-size: 0.9em; }
+        .sealed-badge { color: var(--secondary-text-color); font-size: 0.8em; border: 1px solid var(--divider-color); border-radius: 10px; padding: 1px 8px; flex: none; }
+        .add-row { display: flex; gap: 8px; }
+        .add-row .add-btn { flex: 1 1 0; }
+        .modal .checks { display: flex; flex-direction: column; gap: 2px; }
+        .modal label.check { display: flex; align-items: center; gap: 8px; margin: 8px 0 0 2px; font-size: 14px; color: var(--primary-text-color); }
+        .modal label.check input { width: 18px; height: 18px; flex: none; accent-color: var(--primary-color); }
+        .modal input[hidden], .modal div[hidden] { display: none; }
+
       </style>
       <ha-card class="${this._config.dark_background ? "dark" : ""}">
         ${this._renderHeader(title)}
-        ${rows}
-        ${this._editMode && this._canManage() ? `<button class="add-btn" data-action="add">Spule anlegen</button>` : ""}
+        ${body}
+        ${buttons}
       </ha-card>
     `;
 
-    // The humidity column opens its own entity and must stop the click from
-    // also bubbling to the row (which would otherwise open the spool's
-    // remaining-weight entity instead).
-    this.shadowRoot.querySelectorAll(".humidity-col[data-entity]").forEach((column) => {
-      const entityId = column.getAttribute("data-entity");
+    // Rows open the spool's remaining-weight entity; the humidity badges their sensor.
+    this.shadowRoot.querySelectorAll(".row[data-entity], .humidity-col[data-entity], .box-humidity[data-entity]").forEach((element) => {
+      const entityId = element.getAttribute("data-entity");
       if (!entityId) return;
-      column.addEventListener("click", (event) => {
+      element.addEventListener("click", (event) => {
         event.stopPropagation();
         this._openMoreInfo(entityId);
       });
     });
 
-    this.shadowRoot.querySelectorAll(".row[data-entity]").forEach((row) => {
-      const entityId = row.getAttribute("data-entity");
-      if (!entityId) return;
-      row.addEventListener("click", () => this._openMoreInfo(entityId));
-    });
-
-    // Clicking a box header (name, icon, dots) collapses/expands its spools.
+    // Clicking a header (name, icon, dots) collapses/expands its spools.
     this.shadowRoot.querySelectorAll(".box-header[data-toggle-box]").forEach((header) => {
-      const boxId = header.getAttribute("data-toggle-box");
+      const key = header.getAttribute("data-toggle-box");
       header.addEventListener("click", () => {
-        this._boxToggles.set(boxId, !this._isBoxCollapsed(boxId));
+        this._boxToggles.set(key, !this._isCollapsed(key));
         this._render(this._data);
       });
     });
 
-    // The box's humidity badge opens the shared humidity sensor's detail
-    // view instead, and must stop the click from also toggling the header.
-    this.shadowRoot.querySelectorAll(".box-humidity[data-entity]").forEach((badge) => {
-      const entityId = badge.getAttribute("data-entity");
-      if (!entityId) return;
-      badge.addEventListener("click", (event) => {
-        event.stopPropagation();
-        this._openMoreInfo(entityId);
-      });
-    });
-
-    // Edit mode: the pencil, the per-row actions, the "+" buttons.
+    // Edit mode: the pencil, the row actions, the add buttons.
     this.shadowRoot.querySelectorAll("[data-action]").forEach((element) => {
       element.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -709,10 +658,7 @@ class FilamentManagerCard extends HTMLElement {
           this._render(this._data);
           return;
         }
-        this._openModal(action, {
-          device: element.getAttribute("data-device"),
-          box: element.getAttribute("data-box"),
-        });
+        this._openDialog(action, element.getAttribute("data-id"));
       });
     });
 
@@ -722,25 +668,11 @@ class FilamentManagerCard extends HTMLElement {
 
   // ------------------------------------------------------------------ dialogs
 
-  _spoolByDevice(deviceId) {
-    return (this._data ? this._data.spools : []).find((spool) => spool.deviceId === deviceId);
-  }
-
-  _boxList() {
-    const boxes = this._data ? Object.values(this._data.boxes) : [];
-    return boxes.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  _closeModal() {
-    if (this._modalEl) this._modalEl.remove();
-    this._modalEl = null;
-  }
-
   /** The dialogs' choices; fetched when the edit mode starts, so the dialogs open at once. */
   _loadOptions() {
     this._optionsPromise = this._hass
       .callWS({ type: `${PLATFORM}/options` })
-      .catch(() => ({ slots: [], materials: [], colors: [], manufacturers: [], diameters: ["1.75"] }));
+      .catch(() => ({ materials: [], colors: [], manufacturers: [], diameters: ["1.75"] }));
     return this._optionsPromise;
   }
 
@@ -748,7 +680,31 @@ class FilamentManagerCard extends HTMLElement {
     await this._hass.callService(PLATFORM, service, data);
   }
 
-  /** Build a dialog; `fields` is HTML, `actions` a list of {label, kind, run(modal)}. */
+  _closeModal() {
+    if (this._modalEl) this._modalEl.remove();
+    this._modalEl = null;
+  }
+
+  /** The service errors of this integration, in German (the server's text is English). */
+  _errorText(err) {
+    const messages = {
+      box_full: "Diese Filamentbox ist bereits voll.",
+      box_not_empty: "In dieser Filamentbox liegen noch Spulen.",
+      box_required: "Bitte eine Box wählen.",
+      limit_below_count: "In der Box liegen schon mehr Spulen als dieses Limit erlaubt.",
+      name_required: "Bitte einen Namen eingeben.",
+      spool_sealed: "Die Spule ist verschlossen – erst in eine Box öffnen.",
+      spool_not_found: "Die Spule wurde nicht gefunden.",
+      box_not_found: "Die Filamentbox wurde nicht gefunden.",
+      slot_unknown: "Das ist kein AMS-Slot der Bambu-Lab-Integration.",
+      remaining_exceeds_total: "Das Restgewicht darf nicht größer als das Gesamtgewicht sein.",
+    };
+    if (err && messages[err.translation_key]) return messages[err.translation_key];
+    const text = (err && (err.message || err.error)) || String(err);
+    return text.replace(/^Validation error:\s*/, "");
+  }
+
+  /** Build a dialog; `actions` is a list of {label, busy, kind, run(modal)}. */
   _showModal(title, intro, fields, actions) {
     this._closeModal();
     const backdrop = document.createElement("div");
@@ -767,7 +723,9 @@ class FilamentManagerCard extends HTMLElement {
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop && !backdrop.dataset.busy) this._closeModal();
     });
-    backdrop.querySelector('[data-modal="cancel"]').addEventListener("click", () => this._closeModal());
+    backdrop.querySelector('[data-modal="cancel"]').addEventListener("click", () => {
+      if (!backdrop.dataset.busy) this._closeModal();
+    });
     const buttons = [...backdrop.querySelectorAll("button")];
     actions.forEach((action, index) => {
       const button = backdrop.querySelector(`[data-modal="${index}"]`);
@@ -795,20 +753,16 @@ class FilamentManagerCard extends HTMLElement {
     return modal;
   }
 
-  /**
-   * A dropdown with the known choices plus "own value", which reveals a text
-   * field - like the setup dialog, where the dropdowns also accept free text.
-   */
-  _choiceField(id, label, items, { selected = "", optional = false } = {}) {
+  /** A dropdown with the known choices plus "own value", which reveals a text field. */
+  _choiceField(id, label, items, { selected = "" } = {}) {
     const known = items.includes(selected);
     const options = [
-      ...(optional ? [`<option value="">–</option>`] : []),
       ...items.map((item) => `<option value="${esc(item)}" ${item === selected ? "selected" : ""}>${esc(item)}</option>`),
       `<option value="__custom__" ${selected && !known ? "selected" : ""}>Eigene Eingabe …</option>`,
     ].join("");
     return `<label for="${id}">${esc(label)}</label>
       <select id="${id}" data-choice>${options}</select>
-      <input id="${id}-custom" placeholder="${esc(label)}" autocomplete="off" ${selected && !known ? "" : "hidden"} />`;
+      <input id="${id}-custom" placeholder="${esc(label)}" autocomplete="off" value="${selected && !known ? esc(selected) : ""}" ${selected && !known ? "" : "hidden"} />`;
   }
 
   _wireChoices(modal) {
@@ -821,9 +775,174 @@ class FilamentManagerCard extends HTMLElement {
     });
   }
 
+  _choiceValue(modal, id) {
+    const select = modal.querySelector(`#${id}`);
+    return select.value === "__custom__" ? modal.querySelector(`#${id}-custom`).value.trim() : select.value;
+  }
+
+  /** A list of checkboxes (e.g. the notification targets); `modal.querySelectorAll('[name=id]:checked')` reads it back. */
+  _checkList(id, label, items, selected) {
+    const all = [...new Set([...items, ...selected])];
+    if (!all.length) return "";
+    const name = (entityId) => (this._hass.states[entityId] && this._hass.states[entityId].attributes.friendly_name) || entityId;
+    return `<label>${esc(label)}</label>
+      <div class="checks">${all
+        .map(
+          (entityId) =>
+            `<label class="check"><input type="checkbox" name="${id}" value="${esc(entityId)}" ${selected.includes(entityId) ? "checked" : ""} /> ${esc(name(entityId))}</label>`
+        )
+        .join("")}</div>`;
+  }
+
+  _checked(modal, id) {
+    return [...modal.querySelectorAll(`[name="${id}"]:checked`)].map((input) => input.value);
+  }
+
+  _notifyTargets() {
+    return Object.keys(this._hass.states).filter((entityId) => entityId.startsWith("notify."));
+  }
+
+  _isFull(box) {
+    return box.spool_limit && this._data.spools.filter((spool) => spool.box_id === box.id).length >= box.spool_limit;
+  }
+
+  /** The boxes with room left (a box that is full takes no more spools). */
+  _boxOptions(selected, exclude) {
+    return Object.values(this._data.boxes)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .filter((box) => box.id !== exclude && !this._isFull(box))
+      .map((box) => `<option value="${esc(box.id)}" ${box.id === selected ? "selected" : ""}>${esc(box.name)}</option>`)
+      .join("");
+  }
+
+  async _openDialog(kind, id) {
+    if (!this._optionsPromise) this._loadOptions();
+    const data = this._data;
+    const spool = data.spools.find((item) => item.id === id);
+    const box = data.boxes[id];
+
+    if (kind === "delete-spool" && spool) {
+      this._showModal("Spule löschen", `„${spool.name}“ wirklich löschen? Die Entitäten und der Verlauf der Spule gehen verloren.`, "", [
+        { label: "Löschen", busy: "Wird gelöscht", kind: "danger", run: () => this._call("remove_spool", { spool: id }) },
+      ]);
+    } else if (kind === "delete-box" && box) {
+      this._showModal("Box löschen", `Die leere Box „${box.name}“ wirklich löschen?`, "", [
+        { label: "Löschen", busy: "Wird gelöscht", kind: "danger", run: () => this._call("remove_box", { box: id }) },
+      ]);
+    } else if ((kind === "move" || kind === "open") && spool) {
+      const options = this._boxOptions(null, spool.box_id);
+      const opening = kind === "open";
+      if (!options) {
+        this._showModal(opening ? "Spule öffnen" : "Spule verschieben", "Es gibt keine Filamentbox mit freiem Platz.", "", []);
+        return;
+      }
+      this._showModal(
+        opening ? "Spule öffnen" : "In andere Box verschieben",
+        opening ? `„${spool.name}“ aus dem Vorrat nehmen und in eine Box legen.` : `„${spool.name}“ behält Entitäten, Verlauf und Restmenge.`,
+        `<label for="box">${opening ? "Box" : "Zielbox"}</label><select id="box">${options}</select>`,
+        [
+          {
+            label: opening ? "Öffnen" : "Verschieben",
+            busy: opening ? "Wird geöffnet" : "Wird verschoben",
+            kind: "primary",
+            run: (m) => this._call(opening ? "open_spool" : "move_spool", { spool: id, box: m.querySelector("#box").value }),
+          },
+        ]
+      );
+    } else if (kind === "load" && spool) {
+      this._dialogLoad(spool, data);
+    } else if (kind === "add-spool") {
+      await this._dialogAddSpool(data);
+    } else if (kind === "edit-spool" && spool) {
+      await this._dialogEditSpool(spool, data);
+    } else if (kind === "add-box") {
+      this._dialogBox(null, data);
+    } else if (kind === "edit-box" && box) {
+      this._dialogBox(box, data);
+    }
+  }
+
+  _dialogLoad(spool, data) {
+    const hass = this._hass;
+    const options = data.slots
+      .map((slot) => {
+        const state = hass.states[slot];
+        const label = (state && (state.attributes.friendly_name || slot)) || slot;
+        const content = state && state.attributes.name ? ` – ${state.attributes.name}` : state ? ` – ${state.state}` : "";
+        const taken = data.spools.find((s) => s.ams_slot === slot && s.id !== spool.id);
+        return `<option value="${esc(slot)}" ${spool.ams_slot === slot ? "selected" : ""}>${esc(label + content + (taken ? ` (jetzt: ${taken.name})` : ""))}</option>`;
+      })
+      .join("");
+    const actions = [];
+    if (options) {
+      actions.push({
+        label: "In den Drucker laden",
+        busy: "Wird geladen",
+        kind: "primary",
+        run: (m) => this._call("load_spool", { spool: spool.id, slot: m.querySelector("#slot").value }),
+      });
+    }
+    if (spool.ams_slot) {
+      actions.push({ label: "Aus dem Drucker nehmen", busy: "Wird herausgenommen", run: () => this._call("unload_spool", { spool: spool.id }) });
+    }
+    this._showModal(
+      "Spule in den Drucker",
+      options
+        ? `„${spool.name}“ einem AMS-Slot zuordnen. Die Spule, die bisher in diesem Slot war, wird herausgenommen.`
+        : "Keine AMS-Slots gefunden (Integration Bambu Lab nötig).",
+      options ? `<label for="slot">AMS-Slot</label><select id="slot">${options}</select>` : "",
+      actions
+    );
+  }
+
+  async _dialogAddSpool(data) {
+    const choices = await this._optionsPromise;
+    const first = choices.default_suggestion || {};
+    const boxes = this._boxOptions(null, null);
+    const modal = this._showModal(
+      "Spule anlegen",
+      "",
+      `<label for="box">Ablage</label>
+       <select id="box">${boxes}<option value="">Vorrat (verschlossen)</option></select>
+       ${this._choiceField("material", "Material", choices.materials, { selected: choices.default_material })}
+       ${this._choiceField("color", "Farbe", choices.colors, { selected: choices.default_color })}
+       ${this._choiceField("manufacturer", "Hersteller", choices.manufacturers, { selected: choices.manufacturers[0] || "" })}
+       <label for="diameter">Durchmesser</label><select id="diameter">${(choices.diameters || ["1.75"]).map((d) => `<option value="${esc(d)}">${esc(d)} mm</option>`).join("")}</select>
+       <label for="name">Name</label><input id="name" autocomplete="off" value="${esc(first.name || "")}" />
+       <label for="total">Gesamtgewicht in g</label><input id="total" type="number" min="0" value="${esc(first.total_weight || "")}" />
+       <div id="remaining-row"><label for="remaining">Restgewicht in g</label><input id="remaining" type="number" min="0" value="${esc(first.total_weight || "")}" /></div>`,
+      [
+        {
+          label: "Anlegen",
+          busy: "Wird angelegt",
+          kind: "primary",
+          run: (m) => {
+            const value = (id) => m.querySelector(`#${id}`).value.trim();
+            const material = this._choiceValue(m, "material");
+            const color = this._choiceValue(m, "color");
+            const manufacturer = this._choiceValue(m, "manufacturer");
+            if (!material || !color || !manufacturer) throw new Error("Material, Farbe und Hersteller angeben.");
+            const request = { material, color, manufacturer, diameter: value("diameter") };
+            if (value("box")) request.box = value("box");
+            if (value("name")) request.name = value("name");
+            if (value("total")) request.total_weight = Number(value("total"));
+            if (value("box") && value("remaining")) request.remaining_weight = Number(value("remaining"));
+            return this._call("add_spool", request);
+          },
+        },
+      ]
+    );
+    this._wireChoices(modal);
+    this._wireSuggestions(modal);
+    // A sealed spool is full: no remaining weight to enter.
+    const toggleRemaining = () => (modal.querySelector("#remaining-row").hidden = !modal.querySelector("#box").value);
+    modal.querySelector("#box").addEventListener("change", toggleRemaining);
+    toggleRemaining();
+  }
+
   /**
-   * Name, total and remaining weight are pre-filled with what the setup dialog
-   * would suggest and follow the choices above - until they are edited by hand.
+   * Name, total and remaining weight are pre-filled with what the setup
+   * suggests and follow the choices above - until they are edited by hand.
    */
   _wireSuggestions(modal) {
     const field = (id) => modal.querySelector(`#${id}`);
@@ -858,153 +977,123 @@ class FilamentManagerCard extends HTMLElement {
       field(id).addEventListener("change", refresh);
       field(`${id}-custom`).addEventListener("input", refresh);
     });
-    // The dialog already opens with the suggestions of its starting choices.
   }
 
-  _choiceValue(modal, id) {
-    const select = modal.querySelector(`#${id}`);
-    return select.value === "__custom__" ? modal.querySelector(`#${id}-custom`).value.trim() : select.value;
-  }
-
-  /** A box with a spool limit that is reached takes no more spools. */
-  _isFull(box) {
-    return (
-      box.spoolLimit !== null &&
-      this._data.spools.filter((spool) => spool.boxId === box.deviceId).length >= box.spoolLimit
-    );
-  }
-
-  /** The service errors of this integration, in German (the server's text is English). */
-  _errorText(err) {
-    const messages = {
-      box_full: "Diese Filamentbox ist bereits voll.",
-      box_unavailable: "Diese Filamentbox ist gerade nicht verfügbar.",
-      spool_not_found: "Die Spule wurde nicht gefunden.",
-      box_not_found: "Die Filamentbox wurde nicht gefunden.",
-      slot_unknown: "Das ist kein AMS-Slot der Bambu-Lab-Integration.",
-      remaining_exceeds_total: "Das Restgewicht darf nicht größer als das Gesamtgewicht sein.",
-    };
-    if (err && messages[err.translation_key]) return messages[err.translation_key];
-    const text = (err && (err.message || err.error)) || String(err);
-    return text.replace(/^Validation error:\s*/, "");
-  }
-
-  _boxOptions(selected, exclude) {
-    return this._boxList()
-      .filter((box) => box.deviceId !== exclude && !this._isFull(box))
-      .map((box) => `<option value="${esc(box.deviceId)}" ${box.deviceId === selected ? "selected" : ""}>${esc(box.name)}</option>`)
-      .join("");
-  }
-
-  async _openModal(kind, { device, box }) {
-    if (!this._optionsPromise) this._loadOptions();
-    const spool = device ? this._spoolByDevice(device) : null;
-    if (kind === "delete" && spool) {
-      this._showModal(
-        "Spule löschen",
-        `„${spool.name}“ wirklich löschen? Die Entitäten und der Verlauf der Spule gehen verloren.`,
-        "",
-        [{ label: "Löschen", busy: "Wird gelöscht", kind: "danger", run: () => this._call("remove_spool", { device_id: device }) }]
-      );
-    } else if (kind === "move" && spool) {
-      const others = this._boxOptions(null, spool.boxId);
-      if (!others) {
-        this._showModal("Spule verschieben", "Es gibt keine andere Filamentbox mit freiem Platz.", "", []);
-        return;
-      }
-      this._showModal(
-        "In andere Box verschieben",
-        `„${spool.name}“ behält Entitäten, Verlauf und Restmenge.`,
-        `<label for="box">Zielbox</label><select id="box">${others}</select>`,
-        [
-          {
-            label: "Verschieben",
-            busy: "Wird verschoben",
-            kind: "primary",
-            run: (m) => this._call("move_spool", { device_id: device, box_device_id: m.querySelector("#box").value }),
-          },
-        ]
-      );
-    } else if (kind === "load" && spool) {
-      const slots = (await this._optionsPromise).slots || [];
-      const hass = this._hass;
-      const options = slots
-        .map((slot) => {
-          const state = hass.states[slot];
-          const label = (state && (state.attributes.friendly_name || slot)) || slot;
-          const content = state && state.attributes.name ? ` – ${state.attributes.name}` : state ? ` – ${state.state}` : "";
-          const taken = this._data.spools.find((s) => s.amsSlot === slot && s.deviceId !== device);
-          return `<option value="${esc(slot)}" ${spool.amsSlot === slot ? "selected" : ""}>${esc(label + content + (taken ? ` (jetzt: ${taken.name})` : ""))}</option>`;
-        })
-        .join("");
-      const actions = [];
-      if (options) {
-        actions.push({
-          label: "In den Drucker laden",
-          busy: "Wird geladen",
+  async _dialogEditSpool(spool, data) {
+    const choices = await this._optionsPromise;
+    const hass = this._hass;
+    const number = (value) => (value === null || value === undefined ? "" : value);
+    const cloud = data.cloud
+      ? `<label for="cloud_spool">Bambu-Cloud-Spule (– = automatisch per RFID)</label>
+         <select id="cloud_spool"><option value="">–</option>${data.cloud
+           .map((item) => `<option value="${esc(item.id)}" ${item.id === spool.cloud_spool ? "selected" : ""}>${esc(item.label)}</option>`)
+           .join("")}</select>
+         <label class="check"><input type="checkbox" id="cloud_sync" ${spool.cloud_sync ? "checked" : ""} /> Restmenge aus der Cloud übernehmen</label>`
+      : "";
+    const ams = spool.ams_slot
+      ? `<label class="check"><input type="checkbox" id="ams_sync" ${spool.ams_sync ? "checked" : ""} /> Restmenge aus dem AMS übernehmen (nur Spulen mit RFID)</label>`
+      : "";
+    const modal = this._showModal(
+      "Spule bearbeiten",
+      "",
+      `<label for="name">Name</label><input id="name" autocomplete="off" value="${esc(spool.name)}" />
+       ${this._choiceField("material", "Material", choices.materials, { selected: spool.material })}
+       ${this._choiceField("color", "Farbe", choices.colors, { selected: spool.color })}
+       ${this._choiceField("manufacturer", "Hersteller", choices.manufacturers, { selected: spool.manufacturer })}
+       <label for="diameter">Durchmesser</label><select id="diameter">${(choices.diameters || ["1.75"])
+         .map((d) => `<option value="${esc(d)}" ${d === spool.diameter ? "selected" : ""}>${esc(d)} mm</option>`)
+         .join("")}</select>
+       <label for="total">Gesamtgewicht in g</label><input id="total" type="number" min="0" value="${esc(spool.total_weight)}" />
+       <label for="low">Bestandswarnung unter … % (leer = aus)</label><input id="low" type="number" min="0" max="100" value="${esc(number(spool.low_stock_threshold))}" />
+       ${this._checkList("notify", "Benachrichtigen bei Bestandswarnung", this._notifyTargets(), spool.notify_targets)}
+       <label class="check"><input type="checkbox" id="persistent" ${spool.persistent_notification ? "checked" : ""} /> Dauerhafte Benachrichtigung anzeigen</label>
+       ${ams}${cloud}`,
+      [
+        {
+          label: "Speichern",
+          busy: "Wird gespeichert",
           kind: "primary",
-          run: (m) => this._call("load_spool", { device_id: device, slot: m.querySelector("#slot").value }),
-        });
-      }
-      if (spool.inPrinter || spool.amsSlot) {
-        actions.push({ label: "Aus dem Drucker nehmen", busy: "Wird herausgenommen", run: () => this._call("unload_spool", { device_id: device }) });
-      }
-      this._showModal(
-        "Spule in den Drucker",
-        options
-          ? `„${spool.name}“ einem AMS-Slot zuordnen. Die Spule, die bisher in diesem Slot war, wird herausgenommen.`
-          : "Keine AMS-Slots gefunden (Integration Bambu Lab nötig).",
-        options ? `<label for="slot">AMS-Slot</label><select id="slot">${options}</select>` : "",
-        actions
-      );
-    } else if (kind === "add") {
-      const choices = await this._optionsPromise;
-      const boxes = this._boxOptions(box || null, null);
-      if (!boxes) {
-        this._showModal("Spule anlegen", "Es gibt keine Filamentbox mit freiem Platz.", "", []);
-        return;
-      }
-      const first = choices.default_suggestion || {}; // what the dialog starts with, so it opens complete
-      const modal = this._showModal(
-        "Spule anlegen",
-        "",
-        `<label for="box">Box</label><select id="box">${boxes}</select>
-         ${this._choiceField("material", "Material", choices.materials, { selected: choices.default_material })}
-         ${this._choiceField("color", "Farbe", choices.colors, { selected: choices.default_color })}
-         ${this._choiceField("manufacturer", "Hersteller", choices.manufacturers, { selected: choices.manufacturers[0] || "" })}
-         <label for="diameter">Durchmesser</label><select id="diameter">${choices.diameters.map((d) => `<option value="${esc(d)}">${esc(d)} mm</option>`).join("")}</select>
-         <label for="name">Name</label><input id="name" autocomplete="off" value="${esc(first.name || "")}" />
-         <label for="total">Gesamtgewicht in g</label><input id="total" type="number" min="0" value="${esc(first.total_weight || "")}" />
-         <label for="remaining">Restgewicht in g</label><input id="remaining" type="number" min="0" value="${esc(first.total_weight || "")}" />`,
-        [
-          {
-            label: "Anlegen",
-            busy: "Wird angelegt",
-            kind: "primary",
-            run: (m) => {
-              const value = (id) => m.querySelector(`#${id}`).value.trim();
-              const material = this._choiceValue(m, "material");
-              const color = this._choiceValue(m, "color");
-              const manufacturer = this._choiceValue(m, "manufacturer");
-              if (!material || !color || !manufacturer) throw new Error("Material, Farbe und Hersteller angeben.");
-              const data = {
-                box_device_id: value("box"),
-                material,
-                color,
-                manufacturer,
-                diameter: value("diameter"),
-              };
-              if (value("name")) data.name = value("name");
-              if (value("total")) data.total_weight = Number(value("total"));
-              if (value("remaining")) data.remaining_weight = Number(value("remaining"));
-              return this._call("add_spool", data);
-            },
+          run: (m) => {
+            const value = (id) => m.querySelector(`#${id}`).value.trim();
+            const material = this._choiceValue(m, "material");
+            const color = this._choiceValue(m, "color");
+            const manufacturer = this._choiceValue(m, "manufacturer");
+            if (!value("name") || !material || !color || !manufacturer) throw new Error("Name, Material, Farbe und Hersteller angeben.");
+            const request = {
+              spool: spool.id,
+              name: value("name"),
+              material,
+              color,
+              manufacturer,
+              diameter: value("diameter"),
+              low_stock_threshold: value("low") === "" ? "" : Number(value("low")),
+              notify_targets: this._checked(m, "notify"),
+              persistent_notification: m.querySelector("#persistent").checked,
+            };
+            if (value("total")) request.total_weight = Number(value("total"));
+            if (m.querySelector("#ams_sync")) request.ams_sync = m.querySelector("#ams_sync").checked;
+            if (m.querySelector("#cloud_spool")) {
+              request.cloud_spool = value("cloud_spool");
+              request.cloud_sync = m.querySelector("#cloud_sync").checked;
+            }
+            return this._call("update_spool", request);
           },
-        ]
-      );
-      this._wireChoices(modal);
-      this._wireSuggestions(modal);
-    }
+        },
+      ]
+    );
+    this._wireChoices(modal);
+  }
+
+  _dialogBox(box, data) {
+    const hass = this._hass;
+    const sensors = Object.keys(hass.states).filter(
+      (entityId) => entityId.startsWith("sensor.") && hass.states[entityId].attributes.device_class === "humidity"
+    );
+    if (box && box.humidity_sensor && !sensors.includes(box.humidity_sensor)) sensors.push(box.humidity_sensor);
+    const sensorOptions = sensors
+      .sort()
+      .map((entityId) => {
+        const name = hass.states[entityId] ? hass.states[entityId].attributes.friendly_name || entityId : entityId;
+        return `<option value="${esc(entityId)}" ${box && box.humidity_sensor === entityId ? "selected" : ""}>${esc(name)}</option>`;
+      })
+      .join("");
+    const number = (value) => (value === null || value === undefined ? "" : value);
+    this._showModal(
+      box ? "Box bearbeiten" : "Box anlegen",
+      "",
+      `<label for="name">Name</label><input id="name" autocomplete="off" value="${esc(box ? box.name : "")}" />
+       <label for="sensor">Luftfeuchtigkeitssensor (optional)</label>
+       <select id="sensor"><option value="">–</option>${sensorOptions}</select>
+       <label for="max">Maximale Luftfeuchtigkeit in % (leer = automatisch${box ? `, aktuell ${box.effective_humidity_max} %` : ""})</label>
+       <input id="max" type="number" min="0" max="100" value="${esc(number(box && box.humidity_max))}" />
+       <label for="delay">Warnen erst nach … Minuten (leer = automatisch${box ? `, aktuell ${box.effective_humidity_delay}` : ""})</label>
+       <input id="delay" type="number" min="0" value="${esc(number(box && box.humidity_delay))}" />
+       <label for="limit">Maximale Spulenanzahl (leer = unbegrenzt)</label>
+       <input id="limit" type="number" min="1" value="${esc(number(box && box.spool_limit))}" />
+       ${this._checkList("notify", "Benachrichtigen bei Feuchtewarnung", this._notifyTargets(), box ? box.notify_targets : [])}
+       <label class="check"><input type="checkbox" id="persistent" ${box && box.persistent_notification ? "checked" : ""} /> Dauerhafte Benachrichtigung anzeigen</label>`,
+      [
+        {
+          label: box ? "Speichern" : "Anlegen",
+          busy: box ? "Wird gespeichert" : "Wird angelegt",
+          kind: "primary",
+          run: (m) => {
+            const value = (id) => m.querySelector(`#${id}`).value.trim();
+            if (!value("name")) throw new Error("Bitte einen Namen eingeben.");
+            const request = {
+              name: value("name"),
+              humidity_sensor: value("sensor"),
+              humidity_max: value("max") === "" ? "" : Number(value("max")),
+              humidity_delay: value("delay") === "" ? "" : Number(value("delay")),
+              spool_limit: value("limit") === "" ? "" : Number(value("limit")),
+              notify_targets: this._checked(m, "notify"),
+              persistent_notification: m.querySelector("#persistent").checked,
+            };
+            return box ? this._call("update_box", { box: box.id, ...request }) : this._call("add_box", request);
+          },
+        },
+      ]
+    );
   }
 }
 
@@ -1014,7 +1103,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "filament-manager-card",
   name: "Filament Manager",
-  description: "Übersicht aller Filamentspulen (Füllstand, Material, Farbe, Luftfeuchtigkeit).",
+  description: "Filamentboxen, Spulen und Vorrat verwalten (Füllstand, Material, Farbe, Luftfeuchtigkeit, Drucker).",
   preview: false,
 });
 
@@ -1135,6 +1224,10 @@ class FilamentManagerCardEditor extends HTMLElement {
           Nur Spulen im Drucker anzeigen
         </label>
         <label class="option">
+          <input id="show_stock" type="checkbox" />
+          Vorrat (verschlossene Spulen) anzeigen
+        </label>
+        <label class="option">
           <input id="dark_background" type="checkbox" />
           Dunklen Hintergrund verwenden (wie die Bambu-Lab-Karten)
         </label>
@@ -1149,6 +1242,9 @@ class FilamentManagerCardEditor extends HTMLElement {
     });
     this.shadowRoot.querySelector("#only_in_printer").addEventListener("change", (event) => {
       this._updateConfig("only_in_printer", event.target.checked || undefined);
+    });
+    this.shadowRoot.querySelector("#show_stock").addEventListener("change", (event) => {
+      this._updateConfig("show_stock", event.target.checked ? undefined : false);
     });
     this.shadowRoot.querySelector("#dark_background").addEventListener("change", (event) => {
       this._updateConfig("dark_background", event.target.checked || undefined);
@@ -1167,6 +1263,7 @@ class FilamentManagerCardEditor extends HTMLElement {
     this.shadowRoot.querySelector("#collapse").checked = Boolean(this._config.collapse_boxes);
     this.shadowRoot.querySelector("#only_in_printer").checked = Boolean(this._config.only_in_printer);
     this.shadowRoot.querySelector("#dark_background").checked = Boolean(this._config.dark_background);
+    this.shadowRoot.querySelector("#show_stock").checked = this._config.show_stock !== false;
     this.shadowRoot.querySelector("#group_by").value = ["material", "none"].includes(this._config.group_by)
       ? this._config.group_by
       : "box";

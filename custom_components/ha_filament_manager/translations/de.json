@@ -1,42 +1,20 @@
 {
   "config": {
     "initiate_flow": {
-      "user": "Filamentbox hinzufügen"
+      "user": "Hinzufügen"
     },
     "step": {
       "user": {
         "title": "Filament Manager",
-        "description": "Was möchtest du hinzufügen?",
+        "description": "Was möchtest du einrichten?",
         "menu_options": {
-          "hub": "Filamentbox hinzufügen",
+          "main": "Filament Manager (Boxen, Spulen, Vorrat)",
           "cloud": "Bambu-Cloud-Konto verbinden (optional)"
         }
       },
-      "hub": {
-        "title": "Filamentbox hinzufügen",
-        "description": "Jeder Hub ist eine Filamentbox (oder ein Regal); die Spulen werden anschließend über den Eintrag des Hubs hinzugefügt (Schaltfläche „+ Hinzufügen“). Grenzwert und Verzögerung leer lassen, um die Werte des empfindlichsten in der Box gelagerten Materials zu verwenden; die maximale Spulenanzahl leer lassen für keine Begrenzung.",
-        "data": {
-          "name": "Name",
-          "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
-          "humidity_max": "Maximale Luftfeuchtigkeit (leer = automatisch)",
-          "humidity_delay": "Warnung erst nach (Minuten, leer = automatisch)",
-          "notify_targets": "Benachrichtigen (optional)",
-          "persistent_notification": "Dauerhafte Benachrichtigung anzeigen",
-          "spool_limit": "Maximale Spulenanzahl (leer = unbegrenzt)"
-        }
-      },
-      "reconfigure": {
-        "title": "Filamentbox bearbeiten",
-        "description": "Aktualisiere Name, Luftfeuchtigkeit, Benachrichtigung und Spulenlimit der Box. Grenzwert und Verzögerung leer lassen, um die Werte des empfindlichsten in der Box gelagerten Materials zu verwenden.",
-        "data": {
-          "name": "Name",
-          "humidity_sensor": "Luftfeuchtigkeitssensor (optional)",
-          "humidity_max": "Maximale Luftfeuchtigkeit (leer = automatisch)",
-          "humidity_delay": "Warnung erst nach (Minuten, leer = automatisch)",
-          "notify_targets": "Benachrichtigen (optional)",
-          "persistent_notification": "Dauerhafte Benachrichtigung anzeigen",
-          "spool_limit": "Maximale Spulenanzahl (leer = unbegrenzt)"
-        }
+      "main": {
+        "title": "Filament Manager einrichten",
+        "description": "Boxen, Spulen und der Vorrat werden in der Dashboard-Karte verwaltet (die Karte „Filament Manager“ zu einem Dashboard hinzufügen)."
       },
       "cloud": {
         "title": "Bambu-Cloud-Konto",
@@ -63,7 +41,6 @@
       }
     },
     "error": {
-      "name_required": "Bitte gib einen Namen für die Filamentbox ein.",
       "invalid_auth": "Anmeldung abgelehnt – E-Mail und Passwort prüfen.",
       "blocked": "Die Bambu-Cloud hat die Anfrage blockiert. Bitte später erneut versuchen.",
       "cannot_connect": "Die Bambu-Cloud ist nicht erreichbar.",
@@ -72,91 +49,9 @@
     "abort": {
       "reconfigure_successful": "Neukonfiguration erfolgreich.",
       "already_configured": "Dieses Bambu-Konto ist bereits verbunden.",
-      "reauth_successful": "Erneut angemeldet."
-    }
-  },
-  "config_subentries": {
-    "spool": {
-      "entry_type": "Filamentspule",
-      "initiate_flow": {
-        "user": "Spule hinzufügen"
-      },
-      "step": {
-        "user": {
-          "title": "Filamentspule hinzufügen",
-          "description": "Um welche Art Spule handelt es sich?",
-          "data": {
-            "material": "Material",
-            "color": "Farbe",
-            "manufacturer": "Hersteller"
-          }
-        },
-        "details": {
-          "title": "Details zur Spule",
-          "description": "Das Gesamtgewicht wird - falls für Material/Hersteller bekannt - vorgeschlagen, sonst ein generischer Standardwert. Immer frei anpassbar.",
-          "data": {
-            "diameter": "Durchmesser",
-            "total_weight": "Gesamtgewicht (neue Spule)",
-            "initial_remaining_weight": "Aktuelle Restmenge",
-            "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
-            "ams_slot": "AMS-Slot (optional, Bambu-Lab-Drucker)",
-            "ams_sync_remaining": "Restmenge aus dem AMS übernehmen (nur Spulen mit RFID)",
-            "notify_targets": "Benachrichtigen (optional)",
-            "persistent_notification": "Dauerhafte Benachrichtigung anzeigen",
-            "cloud_spool": "Bambu-Cloud-Spule (– = automatisch per RFID)",
-            "cloud_sync_remaining": "Restmenge aus der Cloud übernehmen"
-          }
-        },
-        "name": {
-          "title": "Spule benennen",
-          "description": "Vorschlag basierend auf Material, Farbe und Hersteller - kann beliebig angepasst werden.",
-          "data": {
-            "name": "Name"
-          }
-        },
-        "reconfigure": {
-          "title": "Spule bearbeiten",
-          "description": "Aktualisiere die Eigenschaften der Spule. Die Restmenge änderst du über die entsprechende Entität oder die Dienste consume_filament / refill_spool.",
-          "data": {
-            "name": "Name",
-            "material": "Material",
-            "color": "Farbe",
-            "manufacturer": "Hersteller",
-            "diameter": "Durchmesser",
-            "total_weight": "Gesamtgewicht (neue Spule)",
-            "low_stock_threshold": "Warnung bei Bestand unter (optional, z. B. 15)",
-            "ams_slot": "AMS-Slot (optional, Bambu-Lab-Drucker)",
-            "ams_sync_remaining": "Restmenge aus dem AMS übernehmen (nur Spulen mit RFID)",
-            "notify_targets": "Benachrichtigen (optional)",
-            "persistent_notification": "Dauerhafte Benachrichtigung anzeigen",
-            "box": "Filamentbox (Änderung verschiebt die Spule)",
-            "cloud_spool": "Bambu-Cloud-Spule (– = automatisch per RFID)",
-            "cloud_sync_remaining": "Restmenge aus der Cloud übernehmen"
-          }
-        }
-      },
-      "error": {
-        "name_required": "Bitte gib einen Namen für die Spule ein.",
-        "remaining_exceeds_total": "Die Restmenge darf nicht größer als das Gesamtgewicht sein.",
-        "box_unavailable": "Die Spule kann nicht verschoben werden: Diese Filamentbox ist gerade nicht verfügbar.",
-        "box_full": "Diese Filamentbox ist bereits voll."
-      },
-      "abort": {
-        "reconfigure_successful": "Neukonfiguration erfolgreich.",
-        "box_full": "Diese Filamentbox ist bereits voll.",
-        "moved": "Die Spule „{spool}“ liegt jetzt in „{box}“. Entitäten und Verlauf wurden übernommen."
-      }
-    },
-    "box": {
-      "entry_type": "Filamentbox",
-      "initiate_flow": {
-        "user": "Filamentbox hinzufügen"
-      },
-      "step": {
-        "user": {
-          "title": "Filamentbox"
-        }
-      }
+      "reauth_successful": "Erneut angemeldet.",
+      "single_instance_allowed": "Filament Manager und das Bambu-Cloud-Konto sind bereits eingerichtet.",
+      "nothing_to_configure": "Hier gibt es nichts einzustellen – Boxen und Spulen werden in der Dashboard-Karte verwaltet."
     }
   },
   "entity": {
@@ -166,17 +61,11 @@
       }
     },
     "sensor": {
-      "remaining_percentage": {
-        "name": "Füllstand"
-      },
-      "material": {
-        "name": "Material"
-      },
-      "color": {
-        "name": "Farbe"
-      },
       "spool_count": {
         "name": "Spulen"
+      },
+      "stock_count": {
+        "name": "Verschlossene Spulen"
       }
     },
     "binary_sensor": {
@@ -216,9 +105,9 @@
       "name": "Spule in den Drucker laden",
       "description": "Ordnet eine Spule einem AMS-Slot eines Bambu-Lab-Druckers zu. Die bisher diesem Slot zugeordnete Spule wird herausgenommen.",
       "fields": {
-        "device_id": {
+        "spool": {
           "name": "Spule",
-          "description": "Das Gerät der Spule."
+          "description": "Spulen-ID oder ihr Gerät."
         },
         "slot": {
           "name": "AMS-Slot",
@@ -230,33 +119,47 @@
       "name": "Spule aus dem Drucker nehmen",
       "description": "Hebt die AMS-Slot-Zuordnung einer Spule auf.",
       "fields": {
-        "device_id": {
+        "spool": {
           "name": "Spule",
-          "description": "Das Gerät der Spule."
+          "description": "Spulen-ID oder ihr Gerät."
         }
       }
     },
     "move_spool": {
       "name": "Spule in andere Box verschieben",
-      "description": "Verschiebt eine Spule in eine andere Filamentbox, Entitäten und Verlauf bleiben erhalten.",
+      "description": "Legt eine Spule in eine andere Box.",
       "fields": {
-        "device_id": {
+        "spool": {
           "name": "Spule",
-          "description": "Das Gerät der Spule."
+          "description": "Spulen-ID oder ihr Gerät."
         },
-        "box_device_id": {
-          "name": "Zielbox",
-          "description": "Das Gerät der Filamentbox."
+        "box": {
+          "name": "Box",
+          "description": "Box-ID oder ihr Gerät."
+        }
+      }
+    },
+    "open_spool": {
+      "name": "Verschlossene Spule öffnen",
+      "description": "Nimmt eine verschlossene Spule aus dem Vorrat und legt sie in eine Box.",
+      "fields": {
+        "spool": {
+          "name": "Spule",
+          "description": "Spulen-ID oder ihr Gerät."
+        },
+        "box": {
+          "name": "Box",
+          "description": "Box-ID oder ihr Gerät."
         }
       }
     },
     "add_spool": {
       "name": "Spule anlegen",
-      "description": "Legt eine Spule in einer Filamentbox an.",
+      "description": "Legt eine Spule in einer Box an – oder ohne Box als verschlossene Spule im Vorrat.",
       "fields": {
-        "box_device_id": {
+        "box": {
           "name": "Box",
-          "description": "Das Gerät der Filamentbox."
+          "description": "Box-ID oder ihr Gerät. Leer lassen für den Vorrat."
         },
         "material": {
           "name": "Material",
@@ -268,7 +171,7 @@
         },
         "manufacturer": {
           "name": "Hersteller",
-          "description": "Optional."
+          "description": "Pflicht."
         },
         "diameter": {
           "name": "Durchmesser",
@@ -285,6 +188,76 @@
         "remaining_weight": {
           "name": "Restgewicht",
           "description": "In Gramm; Standard ist das Gesamtgewicht."
+        },
+        "low_stock_threshold": {
+          "name": "Bestandswarnung unter",
+          "description": "In Prozent."
+        },
+        "notify_targets": {
+          "name": "Benachrichtigen",
+          "description": "Notify-Entitäten für die Bestandswarnung."
+        },
+        "persistent_notification": {
+          "name": "Dauerhafte Benachrichtigung",
+          "description": "Dauerhafte Benachrichtigung für die Bestandswarnung anzeigen."
+        }
+      }
+    },
+    "update_spool": {
+      "name": "Spule bearbeiten",
+      "description": "Ändert die Angaben einer Spule.",
+      "fields": {
+        "spool": {
+          "name": "Spule",
+          "description": "Spulen-ID oder ihr Gerät."
+        },
+        "name": {
+          "name": "Name",
+          "description": ""
+        },
+        "material": {
+          "name": "Material",
+          "description": ""
+        },
+        "color": {
+          "name": "Farbe",
+          "description": ""
+        },
+        "manufacturer": {
+          "name": "Hersteller",
+          "description": ""
+        },
+        "diameter": {
+          "name": "Durchmesser",
+          "description": ""
+        },
+        "total_weight": {
+          "name": "Gesamtgewicht",
+          "description": "In Gramm."
+        },
+        "low_stock_threshold": {
+          "name": "Bestandswarnung unter",
+          "description": "In Prozent; leer schaltet sie ab."
+        },
+        "notify_targets": {
+          "name": "Benachrichtigen",
+          "description": ""
+        },
+        "persistent_notification": {
+          "name": "Dauerhafte Benachrichtigung",
+          "description": ""
+        },
+        "ams_sync": {
+          "name": "Restmenge aus dem AMS übernehmen",
+          "description": "Nur Spulen mit RFID."
+        },
+        "cloud_spool": {
+          "name": "Bambu-Cloud-Spule",
+          "description": "ID in der Cloud-Bibliothek; leer = automatisch per RFID."
+        },
+        "cloud_sync": {
+          "name": "Restmenge aus der Cloud übernehmen",
+          "description": ""
         }
       }
     },
@@ -292,9 +265,91 @@
       "name": "Spule löschen",
       "description": "Löscht eine Spule samt Gerät und Entitäten.",
       "fields": {
-        "device_id": {
+        "spool": {
           "name": "Spule",
-          "description": "Das Gerät der Spule."
+          "description": "Spulen-ID oder ihr Gerät."
+        }
+      }
+    },
+    "add_box": {
+      "name": "Box anlegen",
+      "description": "Legt eine Filamentbox an.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": ""
+        },
+        "humidity_sensor": {
+          "name": "Luftfeuchtigkeitssensor",
+          "description": "Optional."
+        },
+        "humidity_max": {
+          "name": "Maximale Luftfeuchtigkeit",
+          "description": "Prozent; leer = automatisch aus den enthaltenen Materialien."
+        },
+        "humidity_delay": {
+          "name": "Warnen erst nach",
+          "description": "Minuten; leer = automatisch."
+        },
+        "notify_targets": {
+          "name": "Benachrichtigen",
+          "description": "Notify-Entitäten für die Feuchtewarnung."
+        },
+        "persistent_notification": {
+          "name": "Dauerhafte Benachrichtigung",
+          "description": ""
+        },
+        "spool_limit": {
+          "name": "Maximale Spulenanzahl",
+          "description": "Leer = unbegrenzt."
+        }
+      }
+    },
+    "update_box": {
+      "name": "Box bearbeiten",
+      "description": "Ändert Name oder Einstellungen einer Box.",
+      "fields": {
+        "box": {
+          "name": "Box",
+          "description": "Box-ID oder ihr Gerät."
+        },
+        "name": {
+          "name": "Name",
+          "description": ""
+        },
+        "humidity_sensor": {
+          "name": "Luftfeuchtigkeitssensor",
+          "description": "Leer entfernt ihn."
+        },
+        "humidity_max": {
+          "name": "Maximale Luftfeuchtigkeit",
+          "description": ""
+        },
+        "humidity_delay": {
+          "name": "Warnen erst nach",
+          "description": ""
+        },
+        "notify_targets": {
+          "name": "Benachrichtigen",
+          "description": ""
+        },
+        "persistent_notification": {
+          "name": "Dauerhafte Benachrichtigung",
+          "description": ""
+        },
+        "spool_limit": {
+          "name": "Maximale Spulenanzahl",
+          "description": ""
+        }
+      }
+    },
+    "remove_box": {
+      "name": "Box löschen",
+      "description": "Löscht eine leere Box.",
+      "fields": {
+        "box": {
+          "name": "Box",
+          "description": "Box-ID oder ihr Gerät."
         }
       }
     }
@@ -314,17 +369,32 @@
     "box_not_found": {
       "message": "Die Filamentbox wurde nicht gefunden."
     },
-    "box_unavailable": {
-      "message": "Die Filamentbox „{box}“ ist gerade nicht verfügbar."
-    },
     "box_full": {
       "message": "Die Filamentbox „{box}“ ist bereits voll."
+    },
+    "box_not_empty": {
+      "message": "In der Filamentbox „{box}“ liegen noch Spulen."
+    },
+    "box_required": {
+      "message": "Bitte eine Box wählen."
+    },
+    "limit_below_count": {
+      "message": "In „{box}“ liegen schon mehr Spulen als dieses Limit erlaubt."
+    },
+    "name_required": {
+      "message": "Bitte einen Namen eingeben."
+    },
+    "spool_sealed": {
+      "message": "„{spool}“ ist verschlossen – erst in eine Box öffnen."
     },
     "slot_unknown": {
       "message": "„{slot}“ ist kein AMS-Slot der Bambu-Lab-Integration."
     },
     "remaining_exceeds_total": {
       "message": "Das Restgewicht darf nicht größer als das Gesamtgewicht sein."
+    },
+    "not_loaded": {
+      "message": "Filament Manager ist nicht eingerichtet."
     }
   }
 }

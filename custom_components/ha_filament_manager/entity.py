@@ -1,52 +1,121 @@
-"""Shared helpers for Filament Manager entities."""
+"""Devices and entity bookkeeping shared by the platforms.
+
+Every box is a device, and every spool *in a box* is a device linked to its
+box's device (sealed spools have none). The devices are kept in step with the
+inventory here, before the platforms add or remove their entities.
+"""
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntry, ConfigSubentry
-from homeassistant.core import HomeAssistant
+from collections.abc import Callable
+import inspect
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity import DeviceInfo, Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_MANUFACTURER, CONF_MATERIAL, DOMAIN
+from .const import DOMAIN
+from .store import FilamentManager
+
+STOCK_ID = "stock"
+
+# Home Assistant 2026.8 introduced via_device_id (the registry id of the parent
+# device) and deprecated the identifier-based via_device.
+_HAS_VIA_DEVICE_ID = "via_device_id" in inspect.signature(dr.DeviceRegistry.async_get_or_create).parameters
 
 
-def box_device_info(entry: ConfigEntry) -> DeviceInfo:
-    """Return the device info of a hub - the filament box all its spools belong to."""
-    return DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        name=entry.title,
-        manufacturer="Filament Manager",
-        model="Filamentbox",
-    )
+def device_info(device_id: str) -> DeviceInfo:
+    """Identify a device of this integration (box, spool or the stock) for an entity."""
+    return DeviceInfo(identifiers={(DOMAIN, device_id)})
 
 
-def hub_device_id(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
-    """Return the registry id of the hub's (box) device, if it exists yet."""
-    registry = dr.async_get(hass)
-    identifier = (DOMAIN, entry.entry_id)
+def _find_device(registry: dr.DeviceRegistry, entry: ConfigEntry, device_id: str) -> dr.DeviceEntry | None:
+    identifier = (DOMAIN, device_id)
     if hasattr(registry, "async_get_device_by_identifier"):
-        device = registry.async_get_device_by_identifier(identifier, entry.entry_id)
-    else:  # Home Assistant before 2026.8
-        device = registry.async_get_device(identifiers={identifier})
-    return device.id if device is not None else None
+        return registry.async_get_device_by_identifier(identifier, entry.entry_id)
+    return registry.async_get_device(identifiers={identifier})  # Home Assistant before 2026.8
 
 
-def spool_device_info(hass: HomeAssistant, entry: ConfigEntry, subentry: ConfigSubentry) -> DeviceInfo:
-    """Return the device info shared by all entities that belong to one spool.
+@callback
+def async_sync_devices(hass: HomeAssistant, entry: ConfigEntry, manager: FilamentManager) -> None:
+    """Create/update the devices of boxes and spools and remove those that are gone."""
+    registry = dr.async_get(hass)
+    wanted: set[str] = {STOCK_ID}
 
-    The spool's device is linked to its hub's (box) device, so Home Assistant
-    and the overview card can group them. Home Assistant 2026.8 deprecated the
-    identifier-based `via_device` (removal: 2027.8) in favour of `via_device_id`,
-    the registry id of the parent device; older versions only know `via_device`.
-    """
-    info = DeviceInfo(
-        identifiers={(DOMAIN, subentry.subentry_id)},
-        name=subentry.title,
-        manufacturer=subentry.data.get(CONF_MANUFACTURER) or "Filament Manager",
-        model=subentry.data.get(CONF_MATERIAL),
+    registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, STOCK_ID)},
+        name="Vorrat",
+        manufacturer="Filament Manager",
+        model="Vorrat",
     )
-    if "via_device_id" in DeviceInfo.__annotations__:
-        if (hub_id := hub_device_id(hass, entry)) is not None:
-            info["via_device_id"] = hub_id
-    else:
-        info["via_device"] = (DOMAIN, entry.entry_id)
-    return info
+    box_devices: dict[str, str] = {}
+    for box in manager.boxes.values():
+        wanted.add(box.id)
+        device = registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, box.id)},
+            name=box.name,
+            manufacturer="Filament Manager",
+            model="Filamentbox",
+        )
+        box_devices[box.id] = device.id
+
+    for spool in manager.spools.values():
+        if spool.sealed or spool.box_id not in box_devices:
+            continue
+        wanted.add(spool.id)
+        link = (
+            {"via_device_id": box_devices[spool.box_id]}
+            if _HAS_VIA_DEVICE_ID
+            else {"via_device": (DOMAIN, spool.box_id)}
+        )
+        registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, spool.id)},
+            name=spool.name,
+            manufacturer=spool.manufacturer or "Filament Manager",
+            model=spool.material,
+            **link,
+        )
+
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        owned = {value for domain, value in device.identifiers if domain == DOMAIN}
+        if owned and not owned & wanted:
+            registry.async_remove_device(device.id)
+
+
+class EntitySync:
+    """Adds and removes a platform's entities as the inventory changes.
+
+    `wanted()` returns {unique_id: factory}; entities that are no longer wanted
+    are removed from the registry (their device may stay), new ones are added.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        domain: str,
+        add_entities: AddEntitiesCallback,
+        wanted: Callable[[], dict[str, Callable[[], Entity]]],
+    ) -> None:
+        self._hass = hass
+        self._domain = domain
+        self._add_entities = add_entities
+        self._wanted = wanted
+        self._present: set[str] = set()
+
+    @callback
+    def __call__(self) -> None:
+        wanted = self._wanted()
+        new = [factory() for unique_id, factory in wanted.items() if unique_id not in self._present]
+        if new:
+            self._add_entities(new)
+            self._present |= {entity.unique_id for entity in new}
+        registry = er.async_get(self._hass)
+        for unique_id in self._present - set(wanted):
+            if (entity_id := registry.async_get_entity_id(self._domain, DOMAIN, unique_id)) is not None:
+                registry.async_remove(entity_id)
+            self._present.discard(unique_id)

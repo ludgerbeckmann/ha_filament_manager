@@ -1,98 +1,65 @@
-"""Binary sensor platform for Filament Manager: humidity and low-stock alerts.
+"""Binary sensor platform for Filament Manager: humidity, low-stock and in-printer.
 
-Both are optional: the humidity alert belongs to the hub (= filament box) and
-is only created when it has a humidity sensor; the low-stock alert belongs to a
-spool and is only created when it has a threshold. Each pushes
-a notification (and/or creates a persistent notification) on the off -> on
-transition, and clears it again on the on -> off transition - see
-notify_helper.py.
+All are optional and created only where they apply: the humidity alert belongs
+to a box and exists when the box has a humidity sensor; the low-stock alert to
+a spool with a threshold; "in printer" to a spool assigned to an AMS slot.
+Alerts push a notification (and/or create a persistent notification) on the
+off -> on transition and clear it again on on -> off - see notify_helper.py.
 """
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
-from homeassistant.config_entries import ConfigEntry, ConfigSubentry
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
-from .const import (
-    CONF_AMS_SLOT,
-    CONF_HUMIDITY_SENSOR,
-    CONF_LOW_STOCK_THRESHOLD,
-    CONF_TOTAL_WEIGHT,
-    DOMAIN,
-    SUBENTRY_TYPE_SPOOL,
-    signal_ams_updated,
-    signal_spool_updated,
-)
-from .boxes import box_subentry, effective_box_humidity_limits
-from .entity import box_device_info, spool_device_info
+from .const import signal_ams_updated, signal_box_updated, signal_spool_updated
+from .entity import EntitySync, device_info
 from .notify_helper import async_handle_alert_transition
+from .runtime import FilamentRuntime
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up the hub's humidity alert and the spools' low-stock alerts, if configured."""
-    # The hub (= filament box) owns the humidity monitoring for all its spools.
-    humidity_sensor = entry.data.get(CONF_HUMIDITY_SENSOR)
-    if humidity_sensor:
-        threshold, delay = effective_box_humidity_limits(entry)
-        async_add_entities(
-            [
-                FilamentHumidityAlert(
-                    entry,
-                    humidity_sensor,
-                    device_info=box_device_info(entry),
-                    threshold=threshold,
-                    delay_minutes=delay,
+    """Set up the alerts and in-printer sensors where they are configured."""
+    runtime: FilamentRuntime = entry.runtime_data
+
+    def wanted() -> dict[str, Any]:
+        found: dict[str, Any] = {}
+        for box in runtime.manager.boxes.values():
+            if box.humidity_sensor:
+                found[f"{box.id}_humidity_alert"] = lambda box_id=box.id: FilamentHumidityAlert(runtime, box_id)
+        for spool in runtime.manager.spools.values():
+            if spool.sealed:
+                continue
+            if spool.low_stock_threshold is not None:
+                found[f"{spool.id}_low_stock_alert"] = lambda spool_id=spool.id: FilamentLowStockAlert(
+                    runtime, spool_id
                 )
-            ],
-            config_subentry_id=box_subentry(entry).subentry_id,
-        )
+            if spool.ams_slot:
+                found[f"{spool.id}_in_printer"] = lambda spool_id=spool.id: FilamentInPrinterSensor(
+                    runtime, spool_id
+                )
+        return found
 
-    for subentry_id, subentry in entry.subentries.items():
-        if subentry.subentry_type != SUBENTRY_TYPE_SPOOL:
-            continue
-
-        # Spools used to be able to monitor humidity on their own - that now
-        # only happens at the hub, so drop any such entity left over.
-        _async_remove_humidity_alert_entity(hass, subentry)
-
-        spool_entities: list[BinarySensorEntity] = []
-        if subentry.data.get(CONF_LOW_STOCK_THRESHOLD) is not None:
-            spool_entities.append(FilamentLowStockAlert(hass, entry, subentry))
-        if subentry.data.get(CONF_AMS_SLOT):
-            spool_entities.append(FilamentInPrinterSensor(hass, entry, subentry))
-        else:
-            _async_remove_entity(hass, f"{subentry.subentry_id}_in_printer")
-        if spool_entities:
-            async_add_entities(spool_entities, config_subentry_id=subentry_id)
-
-
-def _async_remove_entity(hass: HomeAssistant, unique_id: str) -> None:
-    """Remove a binary sensor from the registry that is no longer created."""
-    registry = er.async_get(hass)
-    if (entity_id := registry.async_get_entity_id("binary_sensor", DOMAIN, unique_id)) is not None:
-        registry.async_remove(entity_id)
-
-
-def _async_remove_humidity_alert_entity(hass: HomeAssistant, subentry: ConfigSubentry) -> None:
-    """Remove a spool's own (legacy) humidity alert entity, superseded by its hub."""
-    _async_remove_entity(hass, f"{subentry.subentry_id}_humidity_alert")
+    sync = EntitySync(hass, "binary_sensor", async_add_entities, wanted)
+    runtime.syncers.append(sync)
+    sync()
 
 
 class FilamentHumidityAlert(BinarySensorEntity):
-    """Warns when the monitored humidity for an opened spool/box is too high.
+    """Warns when the monitored humidity of a box is too high.
 
-    With a configured delay (minutes), the alert only turns on once the
-    humidity has stayed above the threshold for that long without dropping
-    back below it - short spikes (opening the box) are ignored.
+    With a delay (minutes), the alert only turns on once the humidity has
+    stayed above the limit for that long without dropping back below it -
+    short spikes (opening the box) are ignored. Sensor, limit and delay follow
+    the box's settings and the materials inside, live.
     """
 
     _attr_has_entity_name = True
@@ -101,35 +68,61 @@ class FilamentHumidityAlert(BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.MOISTURE
     _attr_icon = "mdi:water-percent"
 
-    def __init__(
-        self,
-        owner: ConfigEntry,
-        source_entity_id: str,
-        *,
-        device_info: DeviceInfo,
-        threshold: float,
-        delay_minutes: float,
-    ) -> None:
-        self._owner = owner
-        self._source_entity_id = source_entity_id
-        self._threshold = threshold
-        self._delay_minutes = float(delay_minutes)
+    def __init__(self, runtime: FilamentRuntime, box_id: str) -> None:
+        self._manager = runtime.manager
+        self._box_id = box_id
+        self._source: str | None = None
+        self._threshold: float = 0
+        self._delay_minutes: float = 0
         self._current_humidity: float | None = None
         self._over_threshold = False
         self._cancel_delay: CALLBACK_TYPE | None = None
-        self._attr_unique_id = f"{owner.entry_id}_humidity_alert"
-        self._attr_device_info = device_info
+        self._unsub_source: CALLBACK_TYPE | None = None
+        self._attr_unique_id = f"{box_id}_humidity_alert"
+        self._attr_device_info = device_info(box_id)
         self._attr_available = False
         self._attr_is_on = False
 
+    @property
+    def _box(self):
+        return self._manager.boxes[self._box_id]
+
     async def async_added_to_hass(self) -> None:
-        """Start tracking the referenced humidity sensor."""
+        """Start tracking the humidity sensor and follow changes of the box's settings."""
+        self.async_on_remove(self._stop)
         self.async_on_remove(
-            async_track_state_change_event(self.hass, [self._source_entity_id], self._handle_source_event)
+            async_dispatcher_connect(self.hass, signal_box_updated(self._box_id), self._reconfigure)
         )
-        self.async_on_remove(self._cancel_pending_delay)
-        if (state := self.hass.states.get(self._source_entity_id)) is not None:
-            self._update_from_state(state.state)
+        self._reconfigure()
+
+    @callback
+    def _stop(self) -> None:
+        self._cancel_pending_delay()
+        if self._unsub_source is not None:
+            self._unsub_source()
+            self._unsub_source = None
+
+    @callback
+    def _reconfigure(self) -> None:
+        """Pick up a new sensor, limit or delay."""
+        if self._box_id not in self._manager.boxes or not self._box.humidity_sensor:
+            return  # the entity is about to be removed
+        threshold, delay = self._manager.box_limits(self._box_id)
+        source = self._box.humidity_sensor
+        changed = (source, threshold, float(delay)) != (self._source, self._threshold, self._delay_minutes)
+        self._threshold, self._delay_minutes = threshold, float(delay)
+        if source != self._source:
+            if self._unsub_source is not None:
+                self._unsub_source()
+            self._source = source
+            self._unsub_source = async_track_state_change_event(self.hass, [source], self._handle_source_event)
+        if changed:
+            self._cancel_pending_delay()
+            state = self.hass.states.get(source)
+            was_on = self._attr_is_on
+            self._update_from_state(state.state if state is not None else None)
+            self.async_write_ha_state()
+            self._notify_transition(was_on)
 
     @callback
     def _cancel_pending_delay(self) -> None:
@@ -156,13 +149,15 @@ class FilamentHumidityAlert(BinarySensorEntity):
         self._notify_transition(False)
 
     def _notify_transition(self, was_on: bool) -> None:
+        if self._box_id not in self._manager.boxes:
+            return
         async_handle_alert_transition(
             self.hass,
-            self._owner,
+            self._box,
             kind="humidity",
             was_on=was_on,
             is_on=self._attr_is_on,
-            title=f"{self._owner.title}: Luftfeuchtigkeit zu hoch",
+            title=f"{self._box.name}: Luftfeuchtigkeit zu hoch",
             message=(
                 f"Aktuell {self._current_humidity:.0f}% (Grenzwert {self._threshold}%)."
                 if self._current_humidity is not None
@@ -191,9 +186,7 @@ class FilamentHumidityAlert(BinarySensorEntity):
             self._attr_is_on = True
         elif not self._attr_is_on and self._cancel_delay is None:
             # Start the grace period; already-on stays on while still too humid.
-            self._cancel_delay = async_call_later(
-                self.hass, self._delay_minutes * 60, self._delay_elapsed
-            )
+            self._cancel_delay = async_call_later(self.hass, self._delay_minutes * 60, self._delay_elapsed)
 
     @property
     def extra_state_attributes(self) -> dict[str, float | str | bool | None]:
@@ -203,7 +196,8 @@ class FilamentHumidityAlert(BinarySensorEntity):
             "threshold": self._threshold,
             "delay_minutes": self._delay_minutes,
             "over_threshold": self._over_threshold,
-            "source_entity_id": self._source_entity_id,
+            "source_entity_id": self._source,
+            "box_id": self._box_id,
         }
 
 
@@ -216,43 +210,48 @@ class FilamentLowStockAlert(BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_icon = "mdi:package-variant-minus"
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
-        self._entry = entry
-        self._subentry = subentry
-        self._threshold = subentry.data[CONF_LOW_STOCK_THRESHOLD]
+    def __init__(self, runtime: FilamentRuntime, spool_id: str) -> None:
+        self._manager = runtime.manager
+        self._spool_id = spool_id
         self._percent: float | None = None
-        self._attr_unique_id = f"{subentry.subentry_id}_low_stock_alert"
-        self._attr_device_info = spool_device_info(hass, entry, subentry)
+        self._threshold: float | None = None
+        self._attr_unique_id = f"{spool_id}_low_stock_alert"
+        self._attr_device_info = device_info(spool_id)
         self._attr_is_on = False
 
     async def async_added_to_hass(self) -> None:
         """Start tracking the spool's live remaining weight."""
         self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass, signal_spool_updated(self._subentry.subentry_id), self._handle_update
-            )
+            async_dispatcher_connect(self.hass, signal_spool_updated(self._spool_id), self._handle_update)
         )
         self._recompute()
 
     @callback
     def _handle_update(self) -> None:
+        spool = self._manager.spools.get(self._spool_id)
+        if spool is None or spool.low_stock_threshold is None:
+            return  # about to be removed
         was_on = self._attr_is_on
         self._recompute()
         self.async_write_ha_state()
         async_handle_alert_transition(
             self.hass,
-            self._subentry,
+            spool,
             kind="low_stock",
             was_on=was_on,
             is_on=self._attr_is_on,
-            title=f"{self._subentry.title}: Bestand niedrig",
+            title=f"{spool.name}: Bestand niedrig",
             message=f"Nur noch {self._percent}% übrig (Grenzwert {self._threshold}%).",
         )
 
     def _recompute(self) -> None:
-        total = self._subentry.data.get(CONF_TOTAL_WEIGHT)
-        remaining = self._entry.runtime_data.spools[self._subentry.subentry_id].remaining_weight
-        self._percent = round(remaining / total * 100, 1) if total else None
+        spool = self._manager.spools.get(self._spool_id)
+        if spool is None or spool.low_stock_threshold is None:
+            return
+        self._threshold = spool.low_stock_threshold
+        self._percent = (
+            round(spool.remaining_weight / spool.total_weight * 100, 1) if spool.total_weight else None
+        )
         self._attr_is_on = self._percent is not None and self._percent < self._threshold
 
     @property
@@ -269,18 +268,16 @@ class FilamentInPrinterSensor(BinarySensorEntity):
     _attr_icon = "mdi:printer-3d"
     _attr_should_poll = False
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
-        self._entry = entry
-        self._subentry = subentry
-        self._attr_unique_id = f"{subentry.subentry_id}_in_printer"
-        self._attr_device_info = spool_device_info(hass, entry, subentry)
+    def __init__(self, runtime: FilamentRuntime, spool_id: str) -> None:
+        self._runtime = runtime
+        self._spool_id = spool_id
+        self._attr_unique_id = f"{spool_id}_in_printer"
+        self._attr_device_info = device_info(spool_id)
 
     async def async_added_to_hass(self) -> None:
         """Follow the AMS slot's state."""
         self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass, signal_ams_updated(self._subentry.subentry_id), self._handle_update
-            )
+            async_dispatcher_connect(self.hass, signal_ams_updated(self._spool_id), self._handle_update)
         )
 
     @callback
@@ -289,7 +286,7 @@ class FilamentInPrinterSensor(BinarySensorEntity):
 
     @property
     def _state(self):
-        return self._entry.runtime_data.ams.states.get(self._subentry.subentry_id)
+        return self._runtime.ams.states.get(self._spool_id)
 
     @property
     def available(self) -> bool:
@@ -304,9 +301,10 @@ class FilamentInPrinterSensor(BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, str | int | bool | None]:
         """Return the slot and what the AMS reports."""
+        spool = self._runtime.manager.spools.get(self._spool_id)
         state = self._state
         return {
-            "ams_slot": self._subentry.data.get(CONF_AMS_SLOT),
+            "ams_slot": spool.ams_slot if spool else None,
             "ams_remaining_percent": state.remain if state else None,
             "rfid_known": state.rfid_known if state else False,
         }

@@ -1,42 +1,20 @@
 {
   "config": {
     "initiate_flow": {
-      "user": "Add filament box"
+      "user": "Add"
     },
     "step": {
       "user": {
         "title": "Filament Manager",
-        "description": "What do you want to add?",
+        "description": "What do you want to set up?",
         "menu_options": {
-          "hub": "Add a filament box",
+          "main": "Filament Manager (boxes, spools, stock)",
           "cloud": "Connect Bambu cloud account (optional)"
         }
       },
-      "hub": {
-        "title": "Add a filament box",
-        "description": "Every hub is one filament box (or shelf); its spools are added afterwards from the hub's entry (the \"+ Add\" button). Leave the humidity limit and delay empty to use the values of the most sensitive material stored in the box; leave the maximum number of spools empty for no limit.",
-        "data": {
-          "name": "Name",
-          "humidity_sensor": "Humidity sensor (optional)",
-          "humidity_max": "Maximum humidity (empty = automatic)",
-          "humidity_delay": "Alert only after (minutes, empty = automatic)",
-          "notify_targets": "Notify (optional)",
-          "persistent_notification": "Show a persistent notification",
-          "spool_limit": "Maximum number of spools (empty = unlimited)"
-        }
-      },
-      "reconfigure": {
-        "title": "Edit filament box",
-        "description": "Update the box's name, humidity, notification and spool-limit settings. Leave the limit and delay empty to use the values of the most sensitive material stored in the box.",
-        "data": {
-          "name": "Name",
-          "humidity_sensor": "Humidity sensor (optional)",
-          "humidity_max": "Maximum humidity (empty = automatic)",
-          "humidity_delay": "Alert only after (minutes, empty = automatic)",
-          "notify_targets": "Notify (optional)",
-          "persistent_notification": "Show a persistent notification",
-          "spool_limit": "Maximum number of spools (empty = unlimited)"
-        }
+      "main": {
+        "title": "Set up Filament Manager",
+        "description": "Boxes, spools and the stock are managed in the dashboard card (add the card \"Filament Manager\" to a dashboard)."
       },
       "cloud": {
         "title": "Bambu cloud account",
@@ -63,7 +41,6 @@
       }
     },
     "error": {
-      "name_required": "Please enter a name for the filament box.",
       "invalid_auth": "Login rejected - check e-mail and password.",
       "blocked": "The Bambu cloud blocked the request. Try again later.",
       "cannot_connect": "Could not reach the Bambu cloud.",
@@ -72,91 +49,9 @@
     "abort": {
       "reconfigure_successful": "Reconfiguration successful.",
       "already_configured": "This Bambu account is already connected.",
-      "reauth_successful": "Logged in again."
-    }
-  },
-  "config_subentries": {
-    "spool": {
-      "entry_type": "Filament spool",
-      "initiate_flow": {
-        "user": "Add spool"
-      },
-      "step": {
-        "user": {
-          "title": "Add a filament spool",
-          "description": "What kind of spool is it?",
-          "data": {
-            "material": "Material",
-            "color": "Color",
-            "manufacturer": "Manufacturer"
-          }
-        },
-        "details": {
-          "title": "Spool details",
-          "description": "Total weight is suggested from the material/manufacturer you picked where known, otherwise a generic default - always editable.",
-          "data": {
-            "diameter": "Diameter",
-            "total_weight": "Total weight (new spool)",
-            "initial_remaining_weight": "Current remaining weight",
-            "low_stock_threshold": "Low stock warning below (optional, e.g. 15)",
-            "ams_slot": "AMS slot (optional, Bambu Lab printer)",
-            "ams_sync_remaining": "Follow the AMS remaining amount (spools with RFID only)",
-            "notify_targets": "Notify (optional)",
-            "persistent_notification": "Show a persistent notification",
-            "cloud_spool": "Bambu cloud spool (– = automatic by RFID)",
-            "cloud_sync_remaining": "Follow the cloud's remaining amount"
-          }
-        },
-        "name": {
-          "title": "Name the spool",
-          "description": "Suggested from the material, color and manufacturer you picked. Feel free to change it.",
-          "data": {
-            "name": "Name"
-          }
-        },
-        "reconfigure": {
-          "title": "Edit spool",
-          "description": "Update the spool's details. Use the remaining-weight entity or the consume_filament / refill_spool services to change how much filament is left.",
-          "data": {
-            "name": "Name",
-            "material": "Material",
-            "color": "Color",
-            "manufacturer": "Manufacturer",
-            "diameter": "Diameter",
-            "total_weight": "Total weight (new spool)",
-            "low_stock_threshold": "Low stock warning below (optional, e.g. 15)",
-            "ams_slot": "AMS slot (optional, Bambu Lab printer)",
-            "ams_sync_remaining": "Follow the AMS remaining amount (spools with RFID only)",
-            "notify_targets": "Notify (optional)",
-            "persistent_notification": "Show a persistent notification",
-            "box": "Filament box (changing it moves the spool)",
-            "cloud_spool": "Bambu cloud spool (– = automatic by RFID)",
-            "cloud_sync_remaining": "Follow the cloud's remaining amount"
-          }
-        }
-      },
-      "error": {
-        "name_required": "Please enter a name for the spool.",
-        "remaining_exceeds_total": "The remaining weight cannot be greater than the total weight.",
-        "box_unavailable": "The spool cannot be moved: that filament box is not available right now.",
-        "box_full": "That filament box is already full."
-      },
-      "abort": {
-        "reconfigure_successful": "Reconfiguration successful.",
-        "box_full": "This filament box is already full.",
-        "moved": "The spool \"{spool}\" now lives in \"{box}\". Its entities and history were kept."
-      }
-    },
-    "box": {
-      "entry_type": "Filament box",
-      "initiate_flow": {
-        "user": "Add filament box"
-      },
-      "step": {
-        "user": {
-          "title": "Filament box"
-        }
-      }
+      "reauth_successful": "Logged in again.",
+      "single_instance_allowed": "Filament Manager and the Bambu cloud account are already set up.",
+      "nothing_to_configure": "There is nothing to configure here - boxes and spools are managed in the dashboard card."
     }
   },
   "entity": {
@@ -166,17 +61,11 @@
       }
     },
     "sensor": {
-      "remaining_percentage": {
-        "name": "Remaining"
-      },
-      "material": {
-        "name": "Material"
-      },
-      "color": {
-        "name": "Color"
-      },
       "spool_count": {
         "name": "Spools"
+      },
+      "stock_count": {
+        "name": "Sealed spools"
       }
     },
     "binary_sensor": {
@@ -216,9 +105,9 @@
       "name": "Load spool into printer",
       "description": "Assigns a spool to an AMS slot of a Bambu Lab printer. The spool that was assigned to this slot before is taken out.",
       "fields": {
-        "device_id": {
+        "spool": {
           "name": "Spool",
-          "description": "The spool's device."
+          "description": "Spool id or its device."
         },
         "slot": {
           "name": "AMS slot",
@@ -230,33 +119,47 @@
       "name": "Take spool out of printer",
       "description": "Removes a spool's AMS slot assignment.",
       "fields": {
-        "device_id": {
+        "spool": {
           "name": "Spool",
-          "description": "The spool's device."
+          "description": "Spool id or its device."
         }
       }
     },
     "move_spool": {
       "name": "Move spool to another box",
-      "description": "Moves a spool to another filament box and keeps its entities and history.",
+      "description": "Puts a spool into another box.",
       "fields": {
-        "device_id": {
+        "spool": {
           "name": "Spool",
-          "description": "The spool's device."
+          "description": "Spool id or its device."
         },
-        "box_device_id": {
-          "name": "Target box",
-          "description": "The filament box's device."
+        "box": {
+          "name": "Box",
+          "description": "Box id or its device."
+        }
+      }
+    },
+    "open_spool": {
+      "name": "Open sealed spool",
+      "description": "Takes a sealed spool out of the stock and puts it into a box.",
+      "fields": {
+        "spool": {
+          "name": "Spool",
+          "description": "Spool id or its device."
+        },
+        "box": {
+          "name": "Box",
+          "description": "Box id or its device."
         }
       }
     },
     "add_spool": {
       "name": "Add spool",
-      "description": "Adds a spool to a filament box.",
+      "description": "Adds a spool to a box - or, without a box, as a sealed spool to the stock.",
       "fields": {
-        "box_device_id": {
+        "box": {
           "name": "Box",
-          "description": "The filament box's device."
+          "description": "Box id or its device. Leave empty for the stock."
         },
         "material": {
           "name": "Material",
@@ -268,7 +171,7 @@
         },
         "manufacturer": {
           "name": "Manufacturer",
-          "description": "Optional."
+          "description": "Required."
         },
         "diameter": {
           "name": "Diameter",
@@ -285,6 +188,76 @@
         "remaining_weight": {
           "name": "Remaining weight",
           "description": "In grams; defaults to the total weight."
+        },
+        "low_stock_threshold": {
+          "name": "Low stock warning below",
+          "description": "In percent."
+        },
+        "notify_targets": {
+          "name": "Notify",
+          "description": "Notify entities for the low stock warning."
+        },
+        "persistent_notification": {
+          "name": "Persistent notification",
+          "description": "Show a persistent notification for the low stock warning."
+        }
+      }
+    },
+    "update_spool": {
+      "name": "Edit spool",
+      "description": "Changes a spool's details.",
+      "fields": {
+        "spool": {
+          "name": "Spool",
+          "description": "Spool id or its device."
+        },
+        "name": {
+          "name": "Name",
+          "description": ""
+        },
+        "material": {
+          "name": "Material",
+          "description": ""
+        },
+        "color": {
+          "name": "Color",
+          "description": ""
+        },
+        "manufacturer": {
+          "name": "Manufacturer",
+          "description": ""
+        },
+        "diameter": {
+          "name": "Diameter",
+          "description": ""
+        },
+        "total_weight": {
+          "name": "Total weight",
+          "description": "In grams."
+        },
+        "low_stock_threshold": {
+          "name": "Low stock warning below",
+          "description": "In percent; empty switches it off."
+        },
+        "notify_targets": {
+          "name": "Notify",
+          "description": ""
+        },
+        "persistent_notification": {
+          "name": "Persistent notification",
+          "description": ""
+        },
+        "ams_sync": {
+          "name": "Follow the AMS remaining amount",
+          "description": "Spools with RFID only."
+        },
+        "cloud_spool": {
+          "name": "Bambu cloud spool",
+          "description": "Id in the cloud library; empty = match by RFID."
+        },
+        "cloud_sync": {
+          "name": "Follow the cloud's remaining amount",
+          "description": ""
         }
       }
     },
@@ -292,9 +265,91 @@
       "name": "Remove spool",
       "description": "Deletes a spool with its device and entities.",
       "fields": {
-        "device_id": {
+        "spool": {
           "name": "Spool",
-          "description": "The spool's device."
+          "description": "Spool id or its device."
+        }
+      }
+    },
+    "add_box": {
+      "name": "Add box",
+      "description": "Creates a filament box.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": ""
+        },
+        "humidity_sensor": {
+          "name": "Humidity sensor",
+          "description": "Optional."
+        },
+        "humidity_max": {
+          "name": "Maximum humidity",
+          "description": "Percent; empty = automatic from the materials inside."
+        },
+        "humidity_delay": {
+          "name": "Alert only after",
+          "description": "Minutes; empty = automatic."
+        },
+        "notify_targets": {
+          "name": "Notify",
+          "description": "Notify entities for the humidity alert."
+        },
+        "persistent_notification": {
+          "name": "Persistent notification",
+          "description": ""
+        },
+        "spool_limit": {
+          "name": "Maximum number of spools",
+          "description": "Empty = unlimited."
+        }
+      }
+    },
+    "update_box": {
+      "name": "Edit box",
+      "description": "Changes a box's name or settings.",
+      "fields": {
+        "box": {
+          "name": "Box",
+          "description": "Box id or its device."
+        },
+        "name": {
+          "name": "Name",
+          "description": ""
+        },
+        "humidity_sensor": {
+          "name": "Humidity sensor",
+          "description": "Empty removes it."
+        },
+        "humidity_max": {
+          "name": "Maximum humidity",
+          "description": ""
+        },
+        "humidity_delay": {
+          "name": "Alert only after",
+          "description": ""
+        },
+        "notify_targets": {
+          "name": "Notify",
+          "description": ""
+        },
+        "persistent_notification": {
+          "name": "Persistent notification",
+          "description": ""
+        },
+        "spool_limit": {
+          "name": "Maximum number of spools",
+          "description": ""
+        }
+      }
+    },
+    "remove_box": {
+      "name": "Remove box",
+      "description": "Deletes an empty box.",
+      "fields": {
+        "box": {
+          "name": "Box",
+          "description": "Box id or its device."
         }
       }
     }
@@ -314,17 +369,32 @@
     "box_not_found": {
       "message": "The filament box was not found."
     },
-    "box_unavailable": {
-      "message": "The filament box \"{box}\" is not available right now."
-    },
     "box_full": {
       "message": "The filament box \"{box}\" is already full."
+    },
+    "box_not_empty": {
+      "message": "The filament box \"{box}\" still holds spools."
+    },
+    "box_required": {
+      "message": "Please choose a box."
+    },
+    "limit_below_count": {
+      "message": "\"{box}\" already holds more spools than that limit."
+    },
+    "name_required": {
+      "message": "Please enter a name."
+    },
+    "spool_sealed": {
+      "message": "\"{spool}\" is sealed - open it into a box first."
     },
     "slot_unknown": {
       "message": "\"{slot}\" is not an AMS slot of the Bambu Lab integration."
     },
     "remaining_exceeds_total": {
       "message": "The remaining weight cannot be greater than the total weight."
+    },
+    "not_loaded": {
+      "message": "Filament Manager is not set up."
     }
   }
 }

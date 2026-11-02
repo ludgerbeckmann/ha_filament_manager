@@ -1,17 +1,13 @@
 """The Filament Manager integration.
 
-A config entry is a hub, and a hub is one filament box (or shelf): its data
-holds the box's humidity sensor, limits and notification settings (see
-config_flow.py). Every filament spool is a config subentry of a hub, each
-getting its own device (linked to the hub's device) and entities. A spool's
-live state (remaining weight) is kept in ``entry.runtime_data.spools``, keyed by
-its subentry id, so it can be shared between the editable number entity and
-the read-only percentage sensor without re-deriving it from entity state
-lookups.
+One config entry holds the whole inventory: filament boxes and spools, kept in
+a storage file (store.py) and managed from the dashboard card or the services.
+Boxes and spools in a box get devices and a few entities that mirror the
+inventory; sealed spools (the stock) are just data. Optionally a Bambu cloud
+account is a second entry (see cloud.py); it only feeds remaining weights.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from homeassistant.components.frontend import add_extra_js_url
@@ -19,50 +15,28 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.typing import ConfigType
 
-from .boxes import box_subentry, box_title, new_box_subentry
 from .ams import AmsTracker
-from .manage import async_register_services, async_register_websocket
-from .cloud_sync import CloudSync
 from .cloud import CloudCoordinator, CloudRuntimeData, async_announce_updates, is_cloud_entry
-from .entity import box_device_info
-from .const import (
-    CARD_FILENAME,
-    CARD_URL_PATH,
-    CARD_VERSION,
-    CONF_INITIAL_REMAINING_WEIGHT,
-    CONF_TOTAL_WEIGHT,
-    DOMAIN,
-    MOVING,
-    SUBENTRY_TYPE_SPOOL,
-)
+from .cloud_sync import CloudSync
+from .const import CARD_FILENAME, CARD_URL_PATH, CARD_VERSION, SIGNAL_SNAPSHOT_DIRTY
+from .entity import async_sync_devices
+from .manage import async_register_services
+from .migrate import CURRENT_VERSION, async_migrate_legacy
+from .runtime import FilamentRuntime
+from .store import FilamentManager
+from .websocket import async_register_websocket
 
 PLATFORMS: list[Platform] = [Platform.NUMBER, Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
-@dataclass
-class SpoolRuntimeData:
-    """Live, mutable state for a single spool."""
-
-    remaining_weight: float
-
-
-@dataclass
-class HubRuntimeData:
-    """Live state of a hub: its spools and the AMS slots they are coupled to."""
-
-    spools: dict[str, SpoolRuntimeData]
-    ams: AmsTracker
-    cloud: CloudSync
-
-
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Serve the bundled Lovelace overview card and register it with the frontend.
+    """Serve the dashboard card, register services and websocket commands, migrate old data.
 
-    Runs once for the whole integration (unlike async_setup_entry, which runs
-    for each hub entry), so the card is available even before the hub is set up.
+    Runs once for the whole integration, before any entry is set up - which is
+    why the migration of the old one-entry-per-box layout lives here.
     """
     card_path = Path(__file__).parent / "www" / CARD_FILENAME
     await hass.http.async_register_static_paths(
@@ -71,69 +45,55 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     add_extra_js_url(hass, f"{CARD_URL_PATH}?v={CARD_VERSION}")
     async_register_services(hass)
     async_register_websocket(hass)
+    await async_migrate_legacy(hass)
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Entries left on an old version have nothing to convert (box entries were handled in async_setup)."""
+    if entry.version < CURRENT_VERSION:
+        hass.config_entries.async_update_entry(entry, version=CURRENT_VERSION)
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the hub (box) entry and every spool subentry it currently holds."""
+    """Set up the inventory (or the cloud account)."""
     if is_cloud_entry(entry):
         return await _async_setup_cloud_entry(hass, entry)
 
-    # The box subentry owns the hub's device and entities. Hubs from before it
-    # existed (or one the user removed) get it back here.
-    box = box_subentry(entry)
-    if box is None:
-        box = new_box_subentry(entry.title)
-        hass.config_entries.async_add_subentry(entry, box)
-    elif box.title != box_title(entry.title):
-        # Missing or changed "# " prefix (earlier version, or edited): restore it.
-        hass.config_entries.async_update_subentry(entry, box, title=box_title(entry.title))
+    manager = FilamentManager(hass)
+    await manager.async_load()
+    ams = AmsTracker(hass, manager)
+    cloud = CloudSync(hass, manager, ams)
+    runtime = FilamentRuntime(manager, ams, cloud)
+    entry.runtime_data = runtime
 
-    # Create the hub's device up front, so every spool's `via_device` link
-    # resolves no matter which platform adds its entities first.
-    info = box_device_info(entry)
-    dev_reg = dr.async_get(hass)
-    device = dev_reg.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        config_subentry_id=box.subentry_id,
-        identifiers=info["identifiers"],
-        name=info["name"],
-        manufacturer=info["manufacturer"],
-        model=info["model"],
-    )
-    if None in device.config_entries_subentries.get(entry.entry_id, set()):
-        # Registered on the entry itself by an earlier version: move it under the box.
-        dev_reg.async_update_device(
-            device.id, remove_config_entry_id=entry.entry_id, remove_config_subentry_id=None
-        )
-
-    tracker = AmsTracker(hass, entry)
-    cloud = CloudSync(hass, entry, tracker)
-    entry.runtime_data = HubRuntimeData(
-        spools={
-            subentry_id: SpoolRuntimeData(
-                remaining_weight=subentry.data.get(
-                    CONF_INITIAL_REMAINING_WEIGHT, subentry.data[CONF_TOTAL_WEIGHT]
-                )
-            )
-            for subentry_id, subentry in entry.subentries.items()
-            if subentry.subentry_type == SUBENTRY_TYPE_SPOOL
-        },
-        ams=tracker,
-        cloud=cloud,
-    )
-    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    async_sync_devices(hass, entry, manager)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # Only follow the AMS once the entities exist to receive its updates.
-    await tracker.async_start()
-    entry.async_on_unload(tracker.async_stop)
+    # Only follow the AMS and the cloud once the entities exist to receive their updates.
+    await ams.async_start()
     await cloud.async_start()
+
+    def _changed(structure: bool) -> None:
+        if not structure:
+            return
+        async_sync_devices(hass, entry, manager)
+        for sync in runtime.syncers:
+            sync()
+        ams.reconfigure()
+        cloud.reconfigure()
+        # Entity ids of new entities are only known now.
+        async_dispatcher_send(hass, SIGNAL_SNAPSHOT_DIRTY)
+
+    entry.async_on_unload(manager.async_add_listener(_changed))
+    entry.async_on_unload(ams.async_stop)
     entry.async_on_unload(cloud.async_stop)
+    entry.async_on_unload(manager.async_flush)  # a change of the last second must not be lost
     return True
 
 
 async def _async_setup_cloud_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the Bambu cloud account: it only feeds the hubs' spools, it has no entities."""
+    """Set up the Bambu cloud account: it only feeds the spools, it has no entities."""
     coordinator = CloudCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = CloudRuntimeData(coordinator)
@@ -141,24 +101,8 @@ async def _async_setup_cloud_entry(hass: HomeAssistant, entry: ConfigEntry) -> b
     return True
 
 
-async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the entry whenever a spool subentry is added, edited or removed.
-
-    The box subentry is named like its hub (see box_title), so a rename of the hub (reconfigure
-    or the rename dialog) is mirrored onto it first; that update calls this
-    listener again, which then reloads.
-    """
-    if entry.entry_id in hass.data.get(DOMAIN, {}).get(MOVING, ()):
-        return  # a spool is being moved into this hub, which reloads afterwards
-    box = box_subentry(entry)
-    if box is not None and box.title != box_title(entry.title):
-        hass.config_entries.async_update_subentry(entry, box, title=box_title(entry.title))
-        return
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload the hub's (or the cloud account's) config entry."""
+    """Unload the inventory (or the cloud account)."""
     if is_cloud_entry(entry):
         return True
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

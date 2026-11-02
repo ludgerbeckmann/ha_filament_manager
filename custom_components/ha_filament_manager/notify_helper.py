@@ -7,26 +7,22 @@ the underlying condition resolves (on -> off).
 from __future__ import annotations
 
 from homeassistant.components import persistent_notification
-from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CONF_NOTIFY_TARGETS, CONF_PERSISTENT_NOTIFICATION, DOMAIN
+from .const import DOMAIN
+from .store import Box, Spool
 
-
-# An alert belongs either to a spool (subentry) or to the hub itself (entry).
-AlertOwner = ConfigSubentry | ConfigEntry
+# An alert belongs either to a spool or to a box.
+AlertOwner = Spool | Box
 
 
 def _notification_id(owner: AlertOwner, kind: str) -> str:
-    owner_id = owner.entry_id if isinstance(owner, ConfigEntry) else owner.subentry_id
-    return f"{DOMAIN}_{owner_id}_{kind}"
+    return f"{DOMAIN}_{owner.id}_{kind}"
 
 
-async def async_send_alert(
-    hass: HomeAssistant, subentry: AlertOwner, *, kind: str, title: str, message: str
-) -> None:
+async def async_send_alert(hass: HomeAssistant, owner: AlertOwner, *, kind: str, title: str, message: str) -> None:
     """Push a notification and/or create a persistent notification for an alert."""
-    for target in subentry.data.get(CONF_NOTIFY_TARGETS) or []:
+    for target in owner.notify_targets or []:
         await hass.services.async_call(
             "notify",
             "send_message",
@@ -34,22 +30,22 @@ async def async_send_alert(
             blocking=True,
         )
 
-    if subentry.data.get(CONF_PERSISTENT_NOTIFICATION):
+    if owner.persistent_notification:
         persistent_notification.async_create(
-            hass, message, title=title, notification_id=_notification_id(subentry, kind)
+            hass, message, title=title, notification_id=_notification_id(owner, kind)
         )
 
 
 @callback
-def async_dismiss_alert(hass: HomeAssistant, subentry: AlertOwner, *, kind: str) -> None:
+def async_dismiss_alert(hass: HomeAssistant, owner: AlertOwner, *, kind: str) -> None:
     """Dismiss a previously created persistent notification, if any."""
-    persistent_notification.async_dismiss(hass, _notification_id(subentry, kind))
+    persistent_notification.async_dismiss(hass, _notification_id(owner, kind))
 
 
 @callback
 def async_handle_alert_transition(
     hass: HomeAssistant,
-    subentry: AlertOwner,
+    owner: AlertOwner,
     *,
     kind: str,
     was_on: bool,
@@ -59,6 +55,6 @@ def async_handle_alert_transition(
 ) -> None:
     """Notify on a rising edge (off -> on) and dismiss on a falling edge (on -> off)."""
     if is_on and not was_on:
-        hass.async_create_task(async_send_alert(hass, subentry, kind=kind, title=title, message=message))
+        hass.async_create_task(async_send_alert(hass, owner, kind=kind, title=title, message=message))
     elif was_on and not is_on:
-        async_dismiss_alert(hass, subentry, kind=kind)
+        async_dismiss_alert(hass, owner, kind=kind)

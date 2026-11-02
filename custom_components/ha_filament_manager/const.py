@@ -22,7 +22,6 @@ CONF_PERSISTENT_NOTIFICATION: Final = "persistent_notification"
 CONF_SPOOL_LIMIT: Final = "spool_limit"
 # A spool's AMS slot: a tray sensor of the Bambu Lab printer integration (ha-bambulab).
 CONF_AMS_SLOT: Final = "ams_slot"
-CONF_BOX: Final = "box"
 # Bambu cloud account (a config entry of its own, next to the hubs)
 CONF_CLOUD: Final = "cloud"
 CONF_CLOUD_REGION: Final = "region"
@@ -34,23 +33,13 @@ CLOUD_REGIONS: Final = ["global", "china"]
 CLOUD_SCAN_MINUTES: Final = 30
 SIGNAL_CLOUD_UPDATED: Final = f"{DOMAIN}_cloud_updated"
 
-# hass.data[DOMAIN] key: entry ids whose reload-on-change is held back (see move.py)
-MOVING: Final = "moving"
 CONF_AMS_SYNC: Final = "ams_sync_remaining"
 
-# A config entry is a hub, and a hub *is* one filament box (or shelf): its
-# data holds the box's humidity sensor, limits and notification settings.
-# Every spool is a config subentry of a hub.
+# Only used to read the data of versions before 1.0, where a config entry was
+# a box and every spool a subentry (see migrate.py).
 SUBENTRY_TYPE_SPOOL: Final = "spool"
-# Every hub holds exactly one (automatically created) box subentry, named like
-# the hub. It only owns the box's device and entities - which keeps Home
-# Assistant from listing them under "devices without a subentry"; the box's
-# settings live in the hub entry's data.
 SUBENTRY_TYPE_BOX: Final = "box"
-# Home Assistant lists a hub's subentries sorted by title. A leading "# "
-# sorts before digits and letters, so the box (named like its hub) comes
-# first, ahead of the spools. It is re-added whenever it goes missing.
-BOX_TITLE_PREFIX: Final = "# "
+CONF_MAIN: Final = "main"
 
 DEFAULT_TOTAL_WEIGHT: Final = 1000
 DEFAULT_HUMIDITY_MAX: Final = 40
@@ -201,6 +190,11 @@ def suggested_humidity_delay(material: str | None) -> int:
 SERVICE_CONSUME_FILAMENT: Final = "consume_filament"
 SERVICE_REFILL_SPOOL: Final = "refill_spool"
 SERVICE_LOAD_SPOOL: Final = "load_spool"
+SERVICE_UPDATE_SPOOL: Final = "update_spool"
+SERVICE_OPEN_SPOOL: Final = "open_spool"
+SERVICE_ADD_BOX: Final = "add_box"
+SERVICE_UPDATE_BOX: Final = "update_box"
+SERVICE_REMOVE_BOX: Final = "remove_box"
 SERVICE_UNLOAD_SPOOL: Final = "unload_spool"
 SERVICE_MOVE_SPOOL: Final = "move_spool"
 SERVICE_ADD_SPOOL: Final = "add_spool"
@@ -212,7 +206,17 @@ CARD_FILENAME: Final = "filament-manager-card.js"
 CARD_URL_PATH: Final = f"/{DOMAIN}_files/{CARD_FILENAME}"
 # Bump whenever the card's JS changes, to bust browser caching of the
 # static file (independent of the integration's own manifest version).
-CARD_VERSION: Final = "21"
+CARD_VERSION: Final = "22"
+
+
+SIGNAL_SNAPSHOT_DIRTY: Final = f"{DOMAIN}_snapshot_dirty"
+# Some spool's AMS state changed (the cloud comparison may find a match then).
+SIGNAL_AMS_ANY: Final = f"{DOMAIN}_ams_any"
+
+
+def signal_box_updated(box_id: str) -> str:
+    """Return the dispatcher signal name for changes of a box."""
+    return f"{DOMAIN}_box_{box_id}_updated"
 
 
 def signal_ams_updated(subentry_id: str) -> str:

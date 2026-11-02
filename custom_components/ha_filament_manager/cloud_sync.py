@@ -8,7 +8,6 @@ stays until the cloud reports something new. Nothing is ever sent to the cloud.
 """
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.storage import Store
@@ -16,32 +15,24 @@ from homeassistant.helpers.storage import Store
 from .ams import AmsTracker
 from .cloud import CloudSpool, cloud_spools
 from .const import (
-    CONF_CLOUD_SPOOL,
-    CONF_CLOUD_SYNC,
     DOMAIN,
+    SIGNAL_AMS_ANY,
     SIGNAL_CLOUD_UPDATED,
-    SUBENTRY_TYPE_SPOOL,
-    signal_ams_updated,
+    SIGNAL_SNAPSHOT_DIRTY,
     signal_cloud_matched,
     signal_cloud_remaining,
 )
+from .store import FilamentManager
 
 
 class CloudSync:
-    """Follows the cloud library for the spools of one hub."""
+    """Follows the cloud library for the spools."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, ams: AmsTracker) -> None:
+    def __init__(self, hass: HomeAssistant, manager: FilamentManager, ams: AmsTracker) -> None:
         self._hass = hass
+        self._manager = manager
         self._ams = ams
-        self._manual: dict[str, int | None] = {}
-        self._sync: dict[str, bool] = {}
-        for subentry_id, subentry in entry.subentries.items():
-            if subentry.subentry_type != SUBENTRY_TYPE_SPOOL:
-                continue
-            chosen = str(subentry.data.get(CONF_CLOUD_SPOOL) or "")
-            self._manual[subentry_id] = int(chosen) if chosen.isdigit() else None
-            self._sync[subentry_id] = bool(subentry.data.get(CONF_CLOUD_SYNC, True))
-        self._store: Store[dict[str, dict[str, int]]] = Store(hass, 1, f"{DOMAIN}.cloud_{entry.entry_id}")
+        self._store: Store[dict[str, dict[str, int]]] = Store(hass, 1, f"{DOMAIN}.cloud")
         self._seen: dict[str, dict[str, int]] = {}
         self.matches: dict[str, CloudSpool] = {}
         self._unsubscribe: list = []
@@ -49,16 +40,9 @@ class CloudSync:
     async def async_start(self) -> None:
         """Load what was seen last time and follow the cloud and the AMS."""
         self._seen = await self._store.async_load() or {}
-        self._unsubscribe.append(
-            async_dispatcher_connect(self._hass, SIGNAL_CLOUD_UPDATED, self._update_all)
-        )
-        for subentry_id in self._manual:
-            # The AMS learns RFIDs after the fact; a spool may get matched then.
-            self._unsubscribe.append(
-                async_dispatcher_connect(
-                    self._hass, signal_ams_updated(subentry_id), callback(lambda s=subentry_id: self._update(s))
-                )
-            )
+        self._unsubscribe.append(async_dispatcher_connect(self._hass, SIGNAL_CLOUD_UPDATED, self._update_all))
+        # The AMS learns RFIDs after the fact (a spool may get matched then).
+        self._unsubscribe.append(async_dispatcher_connect(self._hass, SIGNAL_AMS_ANY, self._update_all))
         self._update_all()
 
     @callback
@@ -69,37 +53,49 @@ class CloudSync:
         self._unsubscribe.clear()
 
     @callback
-    def _update_all(self) -> None:
-        for subentry_id in self._manual:
-            self._update(subentry_id)
+    def reconfigure(self) -> None:
+        """Pick up changed cloud choices; forget matches of spools that are gone."""
+        for spool_id in set(self.matches) - set(self._manager.spools):
+            del self.matches[spool_id]
+        self._update_all()
 
-    def _match(self, subentry_id: str, library: dict[int, CloudSpool]) -> CloudSpool | None:
-        if (chosen := self._manual.get(subentry_id)) is not None:
-            return library.get(chosen)
-        if rfid := self._ams.learned_rfid(subentry_id):
+    @callback
+    def _update_all(self) -> None:
+        for spool in list(self._manager.spools.values()):
+            if not spool.sealed:
+                self._update(spool.id)
+
+    def _match(self, spool_id: str, library: dict[int, CloudSpool]) -> CloudSpool | None:
+        spool = self._manager.spools[spool_id]
+        if (chosen := str(spool.cloud_spool or "")).isdigit():
+            return library.get(int(chosen))
+        if rfid := self._ams.learned_rfid(spool_id):
             return next((spool for spool in library.values() if spool.rfid == rfid.upper()), None)
         return None
 
     @callback
-    def _update(self, subentry_id: str) -> None:
+    def _update(self, spool_id: str) -> None:
+        spool = self._manager.spools[spool_id]
         library = cloud_spools(self._hass)
-        match = self._match(subentry_id, library) if library else None
-        previous = self.matches.get(subentry_id)
+        match = self._match(spool_id, library) if library else None
+        previous = self.matches.get(spool_id)
         if match is None:
             if previous is not None and library is not None:
-                del self.matches[subentry_id]
-                async_dispatcher_send(self._hass, signal_cloud_matched(subentry_id))
+                del self.matches[spool_id]
+                async_dispatcher_send(self._hass, signal_cloud_matched(spool_id))
+                async_dispatcher_send(self._hass, SIGNAL_SNAPSHOT_DIRTY)
             return  # no cloud (or it does not answer): everything stays as it is
-        self.matches[subentry_id] = match
+        self.matches[spool_id] = match
         if previous != match:
-            async_dispatcher_send(self._hass, signal_cloud_matched(subentry_id))
+            async_dispatcher_send(self._hass, signal_cloud_matched(spool_id))
+            async_dispatcher_send(self._hass, SIGNAL_SNAPSHOT_DIRTY)
 
-        if not self._sync.get(subentry_id) or match.remaining is None:
+        if not spool.cloud_sync or match.remaining is None:
             return
-        seen = self._seen.get(subentry_id)
+        seen = self._seen.get(spool_id)
         if seen is not None and seen.get("cloud_id") == match.id and seen.get("remaining") == match.remaining:
             return
-        self._seen[subentry_id] = {"cloud_id": match.id, "remaining": match.remaining}
+        self._seen[spool_id] = {"cloud_id": match.id, "remaining": match.remaining}
         self._hass.async_create_task(self._store.async_save(self._seen))
         if (percent := match.percent) is not None:
-            async_dispatcher_send(self._hass, signal_cloud_remaining(subentry_id), percent)
+            async_dispatcher_send(self._hass, signal_cloud_remaining(spool_id), percent)
