@@ -295,11 +295,6 @@ def is_cloud_entry(entry: ConfigEntry) -> bool:
     return bool(entry.data.get(CONF_CLOUD))
 
 
-def hub_entries(hass: HomeAssistant) -> list[ConfigEntry]:
-    """All hubs (filament boxes), without the cloud account entry."""
-    return [entry for entry in hass.config_entries.async_entries(DOMAIN) if not is_cloud_entry(entry)]
-
-
 def cloud_spools(hass: HomeAssistant) -> dict[int, CloudSpool] | None:
     """The cloud library as last read, or None without a working cloud account."""
     for entry in hass.config_entries.async_entries(DOMAIN):

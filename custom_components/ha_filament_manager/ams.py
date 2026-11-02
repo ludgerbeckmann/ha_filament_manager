@@ -22,7 +22,6 @@ from dataclasses import dataclass
 import re
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
@@ -30,14 +29,8 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
 
-from .const import (
-    CONF_AMS_SLOT,
-    CONF_AMS_SYNC,
-    DOMAIN,
-    SUBENTRY_TYPE_SPOOL,
-    signal_ams_remaining,
-    signal_ams_updated,
-)
+from .const import DOMAIN, SIGNAL_AMS_ANY, SIGNAL_SNAPSHOT_DIRTY, signal_ams_remaining, signal_ams_updated
+from .store import FilamentManager
 
 BAMBULAB_DOMAIN = "bambu_lab"
 
@@ -127,110 +120,120 @@ def evaluate(learned: str | None, slot: SlotStatus) -> tuple[SpoolAmsState, str 
 
 
 class AmsTracker:
-    """Follows the AMS slots assigned to the hub's spools."""
+    """Follows the AMS slots assigned to spools."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, manager: FilamentManager) -> None:
         self._hass = hass
+        self._manager = manager
         self._slots: dict[str, str] = {}
         self._sync: dict[str, bool] = {}
-        for subentry_id, subentry in entry.subentries.items():
-            if subentry.subentry_type == SUBENTRY_TYPE_SPOOL and subentry.data.get(CONF_AMS_SLOT):
-                self._slots[subentry_id] = subentry.data[CONF_AMS_SLOT]
-                self._sync[subentry_id] = bool(subentry.data.get(CONF_AMS_SYNC, True))
         self._learned: dict[str, str] = {}
         self._last_remain: dict[str, int | None] = {}
-        self._store: Store[dict[str, dict[str, str]]] = Store(hass, 1, f"{DOMAIN}.ams_{entry.entry_id}")
+        self._stored: dict[str, dict[str, str]] = {}
+        self._store: Store[dict[str, dict[str, str]]] = Store(hass, 1, f"{DOMAIN}.ams")
         self.states: dict[str, SpoolAmsState] = {}
-        self._unsubscribe: list[Any] = []
+        self._tracked: tuple[str, ...] = ()
+        self._unsubscribe: Any = None
 
     async def async_start(self) -> None:
         """Load what was learned, then follow the slot sensors."""
-        stored = await self._store.async_load() or {}
-        for subentry_id, slot in self._slots.items():
-            record = stored.get(subentry_id)
-            # A different slot means a different spool - start over.
-            if record and record.get("slot") == slot and record.get("rfid"):
-                self._learned[subentry_id] = record["rfid"]
-
-        if self._slots:
-            self._unsubscribe.append(
-                async_track_state_change_event(self._hass, sorted(set(self._slots.values())), self._handle_event)
-            )
-        for subentry_id in self._slots:
-            self._update(subentry_id, initial=True)
+        self._stored = await self._store.async_load() or {}
+        self.reconfigure()
 
     @callback
     def async_stop(self) -> None:
         """Stop following the slot sensors."""
-        for unsubscribe in self._unsubscribe:
-            unsubscribe()
-        self._unsubscribe.clear()
-
-    def learned_rfid(self, subentry_id: str) -> str | None:
-        """The RFID learned for a spool, if any."""
-        return self._learned.get(subentry_id)
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
+        self._tracked = ()
 
     @callback
-    def forget(self, subentry_id: str) -> None:
+    def reconfigure(self) -> None:
+        """Pick up changed slot assignments (a spool loaded, taken out, moved to another slot)."""
+        wanted = {
+            spool.id: spool.ams_slot for spool in self._manager.spools.values() if spool.ams_slot and not spool.sealed
+        }
+        self._sync = {sid: self._manager.spools[sid].ams_sync for sid in wanted}
+        changed: list[str] = []
+        for spool_id in set(self._slots) - set(wanted):  # taken out of the printer
+            for table in (self._learned, self._last_remain, self.states):
+                table.pop(spool_id, None)
+            async_dispatcher_send(self._hass, signal_ams_updated(spool_id))
+        for spool_id, slot in wanted.items():
+            old = self._slots.get(spool_id)
+            if old == slot:
+                continue
+            # A different slot means a different spool - start over.
+            self._learned.pop(spool_id, None)
+            self._last_remain.pop(spool_id, None)
+            record = self._stored.get(spool_id)
+            if old is None and record and record.get("slot") == slot and record.get("rfid"):
+                self._learned[spool_id] = record["rfid"]
+            changed.append(spool_id)
+        self._slots = wanted
+
+        tracked = tuple(sorted(set(wanted.values())))
+        if tracked != self._tracked:
+            if self._unsubscribe is not None:
+                self._unsubscribe()
+                self._unsubscribe = None
+            if tracked:
+                self._unsubscribe = async_track_state_change_event(self._hass, list(tracked), self._handle_event)
+            self._tracked = tracked
+        for spool_id in changed:
+            self._update(spool_id, initial=True)
+
+    def learned_rfid(self, spool_id: str) -> str | None:
+        """The RFID learned for a spool, if any."""
+        return self._learned.get(spool_id)
+
+    @callback
+    def forget(self, spool_id: str) -> None:
         """Forget the learned RFID, e.g. after a new spool replaced the old one."""
-        if subentry_id not in self._slots:
+        if spool_id not in self._slots:
             return
-        self._learned.pop(subentry_id, None)
-        self._last_remain.pop(subentry_id, None)
-        self._update(subentry_id, initial=True)
+        self._learned.pop(spool_id, None)
+        self._last_remain.pop(spool_id, None)
+        self._update(spool_id, initial=True)
 
     @callback
     def _handle_event(self, event: Event) -> None:
-        for subentry_id, slot in self._slots.items():
+        for spool_id, slot in self._slots.items():
             if slot == event.data["entity_id"]:
-                self._update(subentry_id)
+                self._update(spool_id)
 
     @callback
-    def _update(self, subentry_id: str, *, initial: bool = False) -> None:
-        learned = self._learned.get(subentry_id)
-        state, new_learned = evaluate(learned, read_slot(self._hass, self._slots[subentry_id]))
+    def _update(self, spool_id: str, *, initial: bool = False) -> None:
+        learned = self._learned.get(spool_id)
+        state, new_learned = evaluate(learned, read_slot(self._hass, self._slots[spool_id]))
         if new_learned != learned and new_learned is not None:
-            self._learned[subentry_id] = new_learned
+            self._learned[spool_id] = new_learned
             self._hass.async_create_task(self._async_save())
 
-        previous = self._last_remain.get(subentry_id)
-        self._last_remain[subentry_id] = state.remain
-        self.states[subentry_id] = state
-        async_dispatcher_send(self._hass, signal_ams_updated(subentry_id))
+        previous = self._last_remain.get(spool_id)
+        self._last_remain[spool_id] = state.remain
+        self.states[spool_id] = state
+        async_dispatcher_send(self._hass, signal_ams_updated(spool_id))
+        async_dispatcher_send(self._hass, SIGNAL_AMS_ANY)
+        async_dispatcher_send(self._hass, SIGNAL_SNAPSHOT_DIRTY)
 
         # Follow the AMS only when its percentage actually changes - not on
         # every state update and not at startup, so a value the user set by
         # hand stays until the AMS reports something new.
         if (
             not initial
-            and self._sync.get(subentry_id)
+            and self._sync.get(spool_id)
             and state.remain is not None
             and previous is not None
             and state.remain != previous
         ):
-            async_dispatcher_send(self._hass, signal_ams_remaining(subentry_id), state.remain)
+            async_dispatcher_send(self._hass, signal_ams_remaining(spool_id), state.remain)
 
     async def _async_save(self) -> None:
-        await self._store.async_save(
-            {
-                subentry_id: {"slot": self._slots[subentry_id], "rfid": rfid}
-                for subentry_id, rfid in self._learned.items()
-                if subentry_id in self._slots
-            }
-        )
-
-
-async def async_move_learned_rfid(
-    hass: HomeAssistant, source: ConfigEntry, target: ConfigEntry, subentry_id: str
-) -> None:
-    """Hand the RFID learned for a spool over to the hub it moves to."""
-    source_store: Store[dict[str, dict[str, str]]] = Store(hass, 1, f"{DOMAIN}.ams_{source.entry_id}")
-    records = await source_store.async_load() or {}
-    record = records.pop(subentry_id, None)
-    if record is None:
-        return
-    await source_store.async_save(records)
-    target_store: Store[dict[str, dict[str, str]]] = Store(hass, 1, f"{DOMAIN}.ams_{target.entry_id}")
-    target_records = await target_store.async_load() or {}
-    target_records[subentry_id] = record
-    await target_store.async_save(target_records)
+        self._stored = {
+            spool_id: {"slot": self._slots[spool_id], "rfid": rfid}
+            for spool_id, rfid in self._learned.items()
+            if spool_id in self._slots
+        }
+        await self._store.async_save(self._stored)

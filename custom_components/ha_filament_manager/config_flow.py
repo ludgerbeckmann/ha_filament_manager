@@ -1,16 +1,8 @@
 """Config flow for the Filament Manager integration.
 
-A config entry is a *hub* and a hub *is* one filament box (or shelf): when
-it is added, the user names it and optionally sets the box's humidity
-sensor, limits, notifications and a maximum number of spools. Several hubs
-can exist side by side. Every spool is then managed as a config *subentry*
-of a hub (via its "+ Add" menu and the gear icon on each subentry).
-
-Creating a spool subentry is split into three steps: identity (material/
-color/manufacturer), details (diameter, total weight - suggested from the
-identity step - low-stock threshold, notifications), then name (suggested
-from the identity step too). Editing an existing spool is a single combined
-step.
+There is one inventory entry (boxes and spools are managed in the dashboard
+card, see store.py) and, optionally, one entry for a Bambu cloud account whose
+filament library is compared read-only (see cloud.py).
 """
 from __future__ import annotations
 
@@ -18,325 +10,35 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import (
-    SOURCE_REAUTH,
-    SOURCE_RECONFIGURE,
-    ConfigEntry,
-    ConfigFlow,
-    ConfigFlowResult,
-    ConfigSubentryData,
-    ConfigSubentryFlow,
-    SubentryFlowResult,
-)
+from homeassistant.config_entries import SOURCE_REAUTH, SOURCE_RECONFIGURE, ConfigFlow, ConfigFlowResult
 from homeassistant.helpers import selector
 
-from .ams import slot_entities
 from .cloud import (
     AuthFailed,
     BambuCloudClient,
     BambuCloudError,
     CloudflareBlocked,
-    CloudSpool,
     CodeIncorrect,
     EmailCodeRequired,
     TfaRequired,
-    cloud_spools,
-    hub_entries,
     is_cloud_entry,
 )
-from .boxes import box_subentry, box_title, spool_subentries
-from .move import async_move_spool, move_blocker
 from .const import (
-    CONF_AMS_SLOT,
     CLOUD_REGIONS,
-    CONF_BOX,
     CONF_CLOUD,
     CONF_CLOUD_EMAIL,
     CONF_CLOUD_REGION,
-    CONF_CLOUD_SPOOL,
-    CONF_CLOUD_SYNC,
     CONF_CLOUD_TOKEN,
-    CONF_AMS_SYNC,
-    COLOR_OPTIONS,
-    CONF_COLOR,
-    CONF_DIAMETER,
-    CONF_HUMIDITY_DELAY,
-    CONF_HUMIDITY_MAX,
-    CONF_HUMIDITY_SENSOR,
-    CONF_INITIAL_REMAINING_WEIGHT,
-    CONF_LOW_STOCK_THRESHOLD,
-    CONF_MANUFACTURER,
-    CONF_MATERIAL,
-    CONF_NAME,
-    CONF_NOTIFY_TARGETS,
-    CONF_PERSISTENT_NOTIFICATION,
-    CONF_SPOOL_LIMIT,
-    CONF_TOTAL_WEIGHT,
-    DEFAULT_DIAMETER,
-    DEFAULT_MATERIAL,
-    DIAMETER_OPTIONS,
+    CONF_MAIN,
     DOMAIN,
-    MANUFACTURER_OPTIONS,
-    MATERIAL_OPTIONS,
-    SUBENTRY_TYPE_BOX,
-    SUBENTRY_TYPE_SPOOL,
-    suggested_total_weight,
 )
-
-
-def _weight_selector(default_max: float = 100000) -> selector.NumberSelector:
-    return selector.NumberSelector(
-        selector.NumberSelectorConfig(
-            min=0,
-            max=default_max,
-            step=1,
-            unit_of_measurement="g",
-            mode=selector.NumberSelectorMode.BOX,
-        )
-    )
-
-
-# "Other"-style catch-all entries always go last, whatever the alphabet says.
-_CATCH_ALL_OPTIONS = {"Sonstiges", "Sonstige"}
-
-
-def _sorted_options(options: list[str]) -> list[str]:
-    """Sort dropdown options alphabetically, with the catch-all entry last."""
-    return sorted(options, key=lambda option: (option in _CATCH_ALL_OPTIONS, option.casefold()))
-
-
-def _select(options: list[str]) -> selector.SelectSelector:
-    return selector.SelectSelector(
-        selector.SelectSelectorConfig(
-            options=_sorted_options(options),
-            mode=selector.SelectSelectorMode.DROPDOWN,
-            custom_value=True,
-        )
-    )
-
-
-def _suggest_name(data: dict[str, Any]) -> str:
-    """Suggest a spool name built from its manufacturer, material and color."""
-    parts = [
-        data.get(CONF_MANUFACTURER, "").strip(),
-        data.get(CONF_MATERIAL, "").strip(),
-        data.get(CONF_COLOR, "").strip(),
-    ]
-    return " ".join(part for part in parts if part) or "Filamentspule"
-
-
-def _identity_fields(defaults: dict[str, Any], *, include_name: bool) -> dict[Any, Any]:
-    fields: dict[Any, Any] = {}
-
-    if include_name:
-        fields[vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, ""))] = selector.TextSelector()
-
-    fields[
-        vol.Required(CONF_MATERIAL, default=defaults.get(CONF_MATERIAL, DEFAULT_MATERIAL))
-    ] = _select(MATERIAL_OPTIONS)
-    fields[
-        vol.Required(CONF_COLOR, default=defaults.get(CONF_COLOR, COLOR_OPTIONS[0]))
-    ] = _select(COLOR_OPTIONS)
-    fields[
-        vol.Required(
-            CONF_MANUFACTURER,
-            default=defaults.get(CONF_MANUFACTURER) or _sorted_options(MANUFACTURER_OPTIONS)[0],
-        )
-    ] = _select(MANUFACTURER_OPTIONS)
-
-    return fields
-
-
-def _humidity_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
-    """The hub's (box's) humidity sensor, limit and alert delay.
-
-    Limit and delay are optional without a default: left empty, they follow
-    the most sensitive material stored in the box. A suggested value (not a
-    default) is used so an existing value can be cleared again to switch back
-    to automatic.
-    """
-
-    def _optional(conf: str) -> vol.Optional:
-        suggested = defaults.get(conf)
-        return vol.Optional(conf, description={"suggested_value": suggested} if suggested is not None else None)
-
-    humidity_sensor_kwargs = (
-        {"default": defaults[CONF_HUMIDITY_SENSOR]} if defaults.get(CONF_HUMIDITY_SENSOR) else {}
-    )
-    return {
-        vol.Optional(CONF_HUMIDITY_SENSOR, **humidity_sensor_kwargs): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
-        ),
-        _optional(CONF_HUMIDITY_MAX): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0, max=100, step=1, unit_of_measurement="%", mode=selector.NumberSelectorMode.BOX
-            )
-        ),
-        _optional(CONF_HUMIDITY_DELAY): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0, max=1440, step=1, unit_of_measurement="min", mode=selector.NumberSelectorMode.BOX
-            )
-        ),
-    }
-
-
-def _notify_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
-    fields: dict[Any, Any] = {}
-
-    notify_targets_kwargs = (
-        {"default": defaults[CONF_NOTIFY_TARGETS]} if defaults.get(CONF_NOTIFY_TARGETS) else {}
-    )
-    fields[vol.Optional(CONF_NOTIFY_TARGETS, **notify_targets_kwargs)] = selector.EntitySelector(
-        selector.EntitySelectorConfig(domain="notify", multiple=True)
-    )
-    fields[
-        vol.Optional(CONF_PERSISTENT_NOTIFICATION, default=defaults.get(CONF_PERSISTENT_NOTIFICATION, False))
-    ] = selector.BooleanSelector()
-
-    return fields
-
-
-def _ams_fields(defaults: dict[str, Any], slots: list[str]) -> dict[Any, Any]:
-    """The spool's AMS slot (Bambu Lab printer integration) - only when there is one to pick."""
-    current = defaults.get(CONF_AMS_SLOT)
-    options = sorted({*slots, *([current] if current else [])})
-    if not options:
-        return {}
-    # A suggested value (not a default) so the slot can be cleared again.
-    return {
-        vol.Optional(
-            CONF_AMS_SLOT, description={"suggested_value": current} if current else None
-        ): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor", include_entities=options)
-        ),
-        vol.Optional(CONF_AMS_SYNC, default=defaults.get(CONF_AMS_SYNC, True)): selector.BooleanSelector(),
-    }
-
-
-def _cloud_fields(defaults: dict[str, Any], library: dict[int, CloudSpool] | None) -> dict[Any, Any]:
-    """The spool's Bambu cloud spool - only when a cloud account is connected and answering.
-
-    "–" (empty) means automatic: matched by the RFID the AMS coupling learned.
-    """
-    if not library:
-        return {}
-    chosen = str(defaults.get(CONF_CLOUD_SPOOL) or "")
-    options = [selector.SelectOptionDict(value="", label="–")]
-    options += [
-        selector.SelectOptionDict(value=str(spool.id), label=spool.label)
-        for spool in sorted(library.values(), key=lambda spool: spool.name.casefold())
-    ]
-    if chosen and chosen not in {option["value"] for option in options}:
-        options.append(selector.SelectOptionDict(value=chosen, label=f"#{chosen}"))  # gone from the cloud
-    return {
-        vol.Optional(CONF_CLOUD_SPOOL, default=chosen): selector.SelectSelector(
-            selector.SelectSelectorConfig(options=options, mode=selector.SelectSelectorMode.DROPDOWN)
-        ),
-        vol.Optional(CONF_CLOUD_SYNC, default=defaults.get(CONF_CLOUD_SYNC, True)): selector.BooleanSelector(),
-    }
-
-
-def _clean_cloud_choice(data: dict[str, Any]) -> dict[str, Any]:
-    """An empty cloud spool means "automatic": do not store it."""
-    if not data.get(CONF_CLOUD_SPOOL):
-        data.pop(CONF_CLOUD_SPOOL, None)
-    return data
-
-
-def _details_fields(
-    defaults: dict[str, Any],
-    slots: list[str],
-    library: dict[int, CloudSpool] | None = None,
-    *,
-    include_initial: bool,
-) -> dict[Any, Any]:
-    fields: dict[Any, Any] = {}
-
-    fields[
-        vol.Required(CONF_DIAMETER, default=defaults.get(CONF_DIAMETER, DEFAULT_DIAMETER))
-    ] = selector.SelectSelector(
-        selector.SelectSelectorConfig(options=DIAMETER_OPTIONS, mode=selector.SelectSelectorMode.DROPDOWN)
-    )
-
-    default_total_weight = defaults.get(
-        CONF_TOTAL_WEIGHT,
-        suggested_total_weight(defaults.get(CONF_MANUFACTURER), defaults.get(CONF_MATERIAL)),
-    )
-    fields[vol.Required(CONF_TOTAL_WEIGHT, default=default_total_weight)] = _weight_selector()
-
-    if include_initial:
-        fields[vol.Optional(CONF_INITIAL_REMAINING_WEIGHT)] = _weight_selector()
-
-    # No default on purpose: presence of a value is what enables the
-    # low-stock binary sensor for this spool, mirroring how CONF_HUMIDITY_SENSOR
-    # gates the humidity alert above.
-    low_stock_kwargs = (
-        {"default": defaults[CONF_LOW_STOCK_THRESHOLD]}
-        if defaults.get(CONF_LOW_STOCK_THRESHOLD) is not None
-        else {}
-    )
-    fields[vol.Optional(CONF_LOW_STOCK_THRESHOLD, **low_stock_kwargs)] = selector.NumberSelector(
-        selector.NumberSelectorConfig(
-            min=0, max=100, step=1, unit_of_measurement="%", mode=selector.NumberSelectorMode.BOX
-        )
-    )
-
-    fields.update(_ams_fields(defaults, slots))
-    fields.update(_cloud_fields(defaults, library))
-    fields.update(_notify_fields(defaults))
-
-    return fields
-
-
-def _hub_fields(defaults: dict[str, Any]) -> dict[Any, Any]:
-    """The hub's (= filament box's) settings: name, humidity, notifications, spool limit."""
-    fields: dict[Any, Any] = {
-        vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")): selector.TextSelector(),
-    }
-    fields.update(_humidity_fields(defaults))
-    fields.update(_notify_fields(defaults))
-
-    # Optional, no default: empty = any number of spools fits.
-    limit = defaults.get(CONF_SPOOL_LIMIT)
-    fields[
-        vol.Optional(CONF_SPOOL_LIMIT, description={"suggested_value": limit} if limit is not None else None)
-    ] = selector.NumberSelector(
-        selector.NumberSelectorConfig(min=1, max=1000, step=1, mode=selector.NumberSelectorMode.BOX)
-    )
-    return fields
-
-
-def _build_reconfigure_schema(
-    defaults: dict[str, Any],
-    slots: list[str],
-    boxes: list[ConfigEntry] | None = None,
-    library: dict[int, CloudSpool] | None = None,
-) -> vol.Schema:
-    """Combined identity + details schema, used by the (single-step) spool reconfigure flow.
-
-    With more than one box around, the spool's box can be changed as well.
-    """
-    fields = {
-        **_identity_fields(defaults, include_name=True),
-        **_details_fields(defaults, slots, library, include_initial=False),
-    }
-    if boxes and len(boxes) > 1:
-        fields[vol.Required(CONF_BOX, default=defaults[CONF_BOX])] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    selector.SelectOptionDict(value=box.entry_id, label=box.title)
-                    for box in sorted(boxes, key=lambda b: b.title.casefold())
-                ],
-                mode=selector.SelectSelectorMode.DROPDOWN,
-            )
-        )
-    return vol.Schema(fields)
+from .migrate import CURRENT_VERSION, MAIN_UNIQUE_ID
 
 
 class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Set up a Filament Manager hub - one filament box (or shelf) holding spools."""
+    """Set up Filament Manager: the inventory, and optionally a Bambu cloud account."""
 
-    VERSION = 1
+    VERSION = CURRENT_VERSION
 
     def __init__(self) -> None:
         self._client: BambuCloudClient | None = None
@@ -345,38 +47,25 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
         self._tfa_key = ""
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Offer a new box or - as long as none is connected - the Bambu cloud account."""
-        if any(is_cloud_entry(entry) for entry in self.hass.config_entries.async_entries(DOMAIN)):
-            return await self.async_step_hub()
-        return self.async_show_menu(step_id="user", menu_options=["hub", "cloud"])
+        """Offer the inventory and - as long as none is connected - the Bambu cloud account."""
+        entries = self.hass.config_entries.async_entries(DOMAIN)
+        has_cloud = any(is_cloud_entry(entry) for entry in entries)
+        has_main = any(not is_cloud_entry(entry) for entry in entries)
+        if has_cloud and has_main:
+            return self.async_abort(reason="single_instance_allowed")
+        if has_main:
+            return await self.async_step_cloud()
+        if has_cloud:
+            return await self.async_step_main()
+        return self.async_show_menu(step_id="user", menu_options=["main", "cloud"])
 
-    async def async_step_hub(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Create a hub (filament box). Its spools are added as subentries afterwards."""
-        errors: dict[str, str] = {}
-
+    async def async_step_main(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Create the inventory; boxes and spools are added in the dashboard card."""
         if user_input is not None:
-            name = user_input.pop(CONF_NAME, "").strip()
-            if not name:
-                errors["name"] = "name_required"
-            else:
-                return self.async_create_entry(
-                    title=name,
-                    data=user_input,
-                    # The box subentry (named like the hub) owns the box's
-                    # device and entities, see const.SUBENTRY_TYPE_BOX.
-                    subentries=[
-                        ConfigSubentryData(
-                            data={},
-                            subentry_type=SUBENTRY_TYPE_BOX,
-                            title=box_title(name),
-                            unique_id=None,
-                        )
-                    ],
-                )
-
-        return self.async_show_form(
-            step_id="hub", data_schema=vol.Schema(_hub_fields({})), errors=errors
-        )
+            await self.async_set_unique_id(MAIN_UNIQUE_ID)
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(title="Filament Manager", data={CONF_MAIN: True})
+        return self.async_show_form(step_id="main")
 
     # --- optional Bambu cloud account (read-only comparison of the filament library) ---
 
@@ -492,120 +181,10 @@ class FilamentManagerConfigFlow(ConfigFlow, domain=DOMAIN):
         return await self.async_step_cloud()
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Edit the hub's (filament box's) name, humidity, notification and spool-limit settings."""
-        errors: dict[str, str] = {}
+        """The cloud account can log in again; the inventory has nothing to set here."""
         entry = self._get_reconfigure_entry()
-        if is_cloud_entry(entry):  # the cloud account has nothing to set but its login
-            self._region = entry.data[CONF_CLOUD_REGION]
-            self._email = entry.data[CONF_CLOUD_EMAIL]
-            return await self.async_step_cloud()
-
-        if user_input is not None:
-            name = user_input.pop(CONF_NAME, "").strip()
-            if not name:
-                errors["name"] = "name_required"
-            else:
-                if (box := box_subentry(entry)) is not None:
-                    self.hass.config_entries.async_update_subentry(entry, box, title=box_title(name))
-                return self.async_update_and_abort(entry, title=name, data=user_input)
-
-        defaults = {CONF_NAME: entry.title, **entry.data}
-        return self.async_show_form(
-            step_id="reconfigure", data_schema=vol.Schema(_hub_fields(defaults)), errors=errors
-        )
-
-    @classmethod
-    def async_get_supported_subentry_types(
-        cls, config_entry: ConfigEntry
-    ) -> dict[str, type[ConfigSubentryFlow]]:
-        """Return the subentry types a hub supports: just spools (the hub itself is the box)."""
-        if is_cloud_entry(config_entry):
-            return {}
-        return {SUBENTRY_TYPE_SPOOL: SpoolSubentryFlowHandler}
-
-
-class SpoolSubentryFlowHandler(ConfigSubentryFlow):
-    """Handle creating or reconfiguring a spool subentry."""
-
-    def __init__(self) -> None:
-        self._spool_data: dict[str, Any] = {}
-
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        """Collect the spool's identity: material, color, manufacturer."""
-        entry = self._get_entry()
-        limit = entry.data.get(CONF_SPOOL_LIMIT)
-        if limit and len(spool_subentries(entry)) >= limit:
-            return self.async_abort(reason="box_full")
-
-        if user_input is not None:
-            self._spool_data = user_input
-            return await self.async_step_details()
-
-        schema = vol.Schema(_identity_fields({}, include_name=False))
-        return self.async_show_form(step_id="user", data_schema=schema)
-
-    async def async_step_details(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        """Collect diameter, total weight (suggested from the identity step) and low-stock settings."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            total_weight = user_input[CONF_TOTAL_WEIGHT]
-            initial_remaining = user_input.pop(CONF_INITIAL_REMAINING_WEIGHT, None)
-            if initial_remaining is None:
-                initial_remaining = total_weight
-
-            if initial_remaining > total_weight:
-                errors["base"] = "remaining_exceeds_total"
-            else:
-                user_input[CONF_INITIAL_REMAINING_WEIGHT] = initial_remaining
-                self._spool_data = _clean_cloud_choice({**self._spool_data, **user_input})
-                return await self.async_step_name()
-
-        schema = vol.Schema(_details_fields(
-            self._spool_data, slot_entities(self.hass), cloud_spools(self.hass), include_initial=True
-        ))
-        return self.async_show_form(step_id="details", data_schema=schema, errors=errors)
-
-    async def async_step_name(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        """Confirm the spool's name, pre-filled from the identity step's choices."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            name = user_input.get(CONF_NAME, "").strip()
-            if not name:
-                errors["name"] = "name_required"
-            else:
-                return self.async_create_entry(title=name, data=self._spool_data)
-
-        schema = vol.Schema(
-            {vol.Required(CONF_NAME, default=_suggest_name(self._spool_data)): selector.TextSelector()}
-        )
-        return self.async_show_form(step_id="name", data_schema=schema, errors=errors)
-
-    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        """Edit an existing spool's details in a single combined step."""
-        errors: dict[str, str] = {}
-        entry = self._get_entry()
-        subentry = self._get_reconfigure_subentry()
-
-        boxes = hub_entries(self.hass)
-
-        if user_input is not None:
-            _clean_cloud_choice(user_input)
-            name = user_input.pop(CONF_NAME, "").strip()
-            target = self.hass.config_entries.async_get_entry(user_input.pop(CONF_BOX, entry.entry_id))
-            if not name:
-                errors["name"] = "name_required"
-            elif target is None or target.entry_id == entry.entry_id:
-                return self.async_update_and_abort(entry, subentry, title=name, data=user_input)
-            elif (blocker := move_blocker(target)) is not None:
-                errors[CONF_BOX] = blocker
-            else:
-                await async_move_spool(self.hass, entry, subentry, target, title=name, data=user_input)
-                return self.async_abort(
-                    reason="moved", description_placeholders={"box": target.title, "spool": name}
-                )
-
-        defaults = {CONF_NAME: subentry.title, CONF_BOX: entry.entry_id, **subentry.data}
-        schema = _build_reconfigure_schema(defaults, slot_entities(self.hass), boxes, cloud_spools(self.hass))
-        return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)
+        if not is_cloud_entry(entry):
+            return self.async_abort(reason="nothing_to_configure")
+        self._region = entry.data[CONF_CLOUD_REGION]
+        self._email = entry.data[CONF_CLOUD_EMAIL]
+        return await self.async_step_cloud()

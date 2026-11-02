@@ -32,12 +32,11 @@ refill_spool:
 
 load_spool:
   fields:
-    device_id:
+    spool:
       required: true
       selector:
         device:
           integration: ha_filament_manager
-          model: Filamentspule
     slot:
       required: true
       example: sensor.p1s_ams_1_tray_1
@@ -48,7 +47,7 @@ load_spool:
 
 unload_spool:
   fields:
-    device_id:
+    spool:
       required: true
       selector:
         device:
@@ -56,12 +55,25 @@ unload_spool:
 
 move_spool:
   fields:
-    device_id:
+    spool:
       required: true
       selector:
         device:
           integration: ha_filament_manager
-    box_device_id:
+    box:
+      required: true
+      selector:
+        device:
+          integration: ha_filament_manager
+          model: Filamentbox
+
+open_spool:
+  fields:
+    spool:
+      required: true
+      selector:
+        text:
+    box:
       required: true
       selector:
         device:
@@ -70,8 +82,8 @@ move_spool:
 
 add_spool:
   fields:
-    box_device_id:
-      required: true
+    box:
+      required: false
       selector:
         device:
           integration: ha_filament_manager
@@ -87,7 +99,7 @@ add_spool:
       selector:
         text:
     manufacturer:
-      required: false
+      required: true
       example: Bambu Lab
       selector:
         text:
@@ -118,11 +130,202 @@ add_spool:
           max: 100000
           unit_of_measurement: g
           mode: box
+    low_stock_threshold:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+          mode: box
+    notify_targets:
+      required: false
+      selector:
+        entity:
+          domain: notify
+          multiple: true
+    persistent_notification:
+      required: false
+      selector:
+        boolean:
 
-remove_spool:
+update_spool:
   fields:
-    device_id:
+    spool:
       required: true
       selector:
         device:
           integration: ha_filament_manager
+    name:
+      required: false
+      selector:
+        text:
+    material:
+      required: false
+      selector:
+        text:
+    color:
+      required: false
+      selector:
+        text:
+    manufacturer:
+      required: false
+      selector:
+        text:
+    diameter:
+      required: false
+      selector:
+        text:
+    total_weight:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100000
+          unit_of_measurement: g
+          mode: box
+    low_stock_threshold:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+          mode: box
+    notify_targets:
+      required: false
+      selector:
+        entity:
+          domain: notify
+          multiple: true
+    persistent_notification:
+      required: false
+      selector:
+        boolean:
+    ams_sync:
+      required: false
+      selector:
+        boolean:
+    cloud_spool:
+      required: false
+      selector:
+        text:
+    cloud_sync:
+      required: false
+      selector:
+        boolean:
+
+remove_spool:
+  fields:
+    spool:
+      required: true
+      selector:
+        device:
+          integration: ha_filament_manager
+
+add_box:
+  fields:
+    name:
+      required: true
+      selector:
+        text:
+    humidity_sensor:
+      required: false
+      selector:
+        entity:
+          domain: sensor
+          device_class: humidity
+    humidity_max:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+          mode: box
+    humidity_delay:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 1440
+          unit_of_measurement: min
+          mode: box
+    notify_targets:
+      required: false
+      selector:
+        entity:
+          domain: notify
+          multiple: true
+    persistent_notification:
+      required: false
+      selector:
+        boolean:
+    spool_limit:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 1000
+          mode: box
+
+update_box:
+  fields:
+    box:
+      required: true
+      selector:
+        device:
+          integration: ha_filament_manager
+          model: Filamentbox
+    name:
+      required: false
+      selector:
+        text:
+    humidity_sensor:
+      required: false
+      selector:
+        entity:
+          domain: sensor
+          device_class: humidity
+    humidity_max:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+          mode: box
+    humidity_delay:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 1440
+          unit_of_measurement: min
+          mode: box
+    notify_targets:
+      required: false
+      selector:
+        entity:
+          domain: notify
+          multiple: true
+    persistent_notification:
+      required: false
+      selector:
+        boolean:
+    spool_limit:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 1000
+          mode: box
+
+remove_box:
+  fields:
+    box:
+      required: true
+      selector:
+        device:
+          integration: ha_filament_manager
+          model: Filamentbox

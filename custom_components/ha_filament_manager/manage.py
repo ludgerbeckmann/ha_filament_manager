@@ -1,267 +1,234 @@
-"""Services and a websocket command for managing spools from the dashboard card.
+"""Services for managing the inventory (used by the dashboard card, usable in automations).
 
-Everything here works on the same data the config flow edits: spools are
-subentries of a hub (box). A service takes the registry id of a spool's (or a
-box's) device, which is what the card knows.
+Spools and boxes are addressed by their id (what the card knows) or by the id
+of their Home Assistant device (what the service dialog of Home Assistant
+offers): both work.
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components import websocket_api
-from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .ams import slot_entities
-from .boxes import spool_subentries
-from .cloud import hub_entries
-from .config_flow import _sorted_options, _suggest_name
+from .choices import suggest_name
 from .const import (
-    COLOR_OPTIONS,
-    CONF_AMS_SLOT,
     CONF_COLOR,
     CONF_DIAMETER,
-    CONF_INITIAL_REMAINING_WEIGHT,
+    CONF_HUMIDITY_DELAY,
+    CONF_HUMIDITY_MAX,
+    CONF_HUMIDITY_SENSOR,
+    CONF_LOW_STOCK_THRESHOLD,
     CONF_MANUFACTURER,
     CONF_MATERIAL,
+    CONF_NOTIFY_TARGETS,
+    CONF_PERSISTENT_NOTIFICATION,
+    CONF_SPOOL_LIMIT,
     CONF_TOTAL_WEIGHT,
     DEFAULT_DIAMETER,
-    DEFAULT_MATERIAL,
-    DIAMETER_OPTIONS,
     DOMAIN,
-    MANUFACTURER_OPTIONS,
-    MOVING,
-    MATERIAL_OPTIONS,
+    SERVICE_ADD_BOX,
     SERVICE_ADD_SPOOL,
     SERVICE_LOAD_SPOOL,
     SERVICE_MOVE_SPOOL,
+    SERVICE_OPEN_SPOOL,
+    SERVICE_REMOVE_BOX,
     SERVICE_REMOVE_SPOOL,
     SERVICE_UNLOAD_SPOOL,
-    SUBENTRY_TYPE_SPOOL,
+    SERVICE_UPDATE_BOX,
+    SERVICE_UPDATE_SPOOL,
     suggested_total_weight,
 )
-from .move import async_move_spool, move_blocker
+from .runtime import FilamentRuntime, get_runtime
+from .store import FilamentError
 
 _WEIGHT = vol.All(vol.Coerce(float), vol.Range(min=0, max=100000))
+# A number that may be cleared again (None or "" = not set).
+_OPTIONAL_NUMBER = vol.Any(None, "", vol.Coerce(float))
+_OPTIONAL_ENTITY = vol.Any(None, "", cv.entity_id)
+_ENTITY_LIST = vol.All(cv.ensure_list, [cv.entity_id])
 
-LOAD_SCHEMA = vol.Schema({vol.Required("device_id"): cv.string, vol.Required("slot"): cv.entity_id})
-DEVICE_SCHEMA = vol.Schema({vol.Required("device_id"): cv.string})
-MOVE_SCHEMA = vol.Schema({vol.Required("device_id"): cv.string, vol.Required("box_device_id"): cv.string})
-ADD_SCHEMA = vol.Schema(
+_BOX_SETTINGS = {
+    vol.Optional(CONF_HUMIDITY_SENSOR): _OPTIONAL_ENTITY,
+    vol.Optional(CONF_HUMIDITY_MAX): _OPTIONAL_NUMBER,
+    vol.Optional(CONF_HUMIDITY_DELAY): _OPTIONAL_NUMBER,
+    vol.Optional(CONF_NOTIFY_TARGETS): _ENTITY_LIST,
+    vol.Optional(CONF_PERSISTENT_NOTIFICATION): cv.boolean,
+    vol.Optional(CONF_SPOOL_LIMIT): vol.Any(None, "", vol.Coerce(int)),
+}
+_NAME = vol.All(cv.string, vol.Length(min=1))
+
+ADD_BOX_SCHEMA = vol.Schema({vol.Required("name"): _NAME, **_BOX_SETTINGS})
+UPDATE_BOX_SCHEMA = vol.Schema({vol.Required("box"): cv.string, vol.Optional("name"): _NAME, **_BOX_SETTINGS})
+BOX_SCHEMA = vol.Schema({vol.Required("box"): cv.string})
+SPOOL_SCHEMA = vol.Schema({vol.Required("spool"): cv.string})
+LOAD_SCHEMA = vol.Schema({vol.Required("spool"): cv.string, vol.Required("slot"): cv.entity_id})
+MOVE_SCHEMA = vol.Schema({vol.Required("spool"): cv.string, vol.Required("box"): cv.string})
+ADD_SPOOL_SCHEMA = vol.Schema(
     {
-        vol.Required("box_device_id"): cv.string,
-        vol.Required(CONF_MATERIAL): vol.All(cv.string, vol.Length(min=1)),
-        vol.Required(CONF_COLOR): vol.All(cv.string, vol.Length(min=1)),
-        vol.Required(CONF_MANUFACTURER): vol.All(cv.string, vol.Length(min=1)),
+        # Without a box the spool is sealed and goes into the stock.
+        vol.Optional("box"): cv.string,
+        vol.Required(CONF_MATERIAL): _NAME,
+        vol.Required(CONF_COLOR): _NAME,
+        vol.Required(CONF_MANUFACTURER): _NAME,
         vol.Optional(CONF_DIAMETER, default=DEFAULT_DIAMETER): cv.string,
         vol.Optional("name"): cv.string,
         vol.Optional(CONF_TOTAL_WEIGHT): _WEIGHT,
         vol.Optional("remaining_weight"): _WEIGHT,
+        vol.Optional(CONF_LOW_STOCK_THRESHOLD): _OPTIONAL_NUMBER,
+        vol.Optional(CONF_NOTIFY_TARGETS): _ENTITY_LIST,
+        vol.Optional(CONF_PERSISTENT_NOTIFICATION): cv.boolean,
+    }
+)
+UPDATE_SPOOL_SCHEMA = vol.Schema(
+    {
+        vol.Required("spool"): cv.string,
+        vol.Optional("name"): _NAME,
+        vol.Optional(CONF_MATERIAL): _NAME,
+        vol.Optional(CONF_COLOR): _NAME,
+        vol.Optional(CONF_MANUFACTURER): _NAME,
+        vol.Optional(CONF_DIAMETER): cv.string,
+        vol.Optional(CONF_TOTAL_WEIGHT): _WEIGHT,
+        vol.Optional(CONF_LOW_STOCK_THRESHOLD): _OPTIONAL_NUMBER,
+        vol.Optional(CONF_NOTIFY_TARGETS): _ENTITY_LIST,
+        vol.Optional(CONF_PERSISTENT_NOTIFICATION): cv.boolean,
+        vol.Optional("ams_sync"): cv.boolean,
+        vol.Optional("cloud_spool"): vol.Any(None, "", cv.string),
+        vol.Optional("cloud_sync"): cv.boolean,
     }
 )
 
 
-class _Batch:
-    """Changes to hubs' spools, followed by one reload of each touched hub.
-
-    The reload happens before the service call returns, so the card knows
-    when the change has really arrived (and a hub is not reloaded once per
-    changed spool).
-    """
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        self._hass = hass
-        self._touched: dict[str, ConfigEntry] = {}
-
-    def touch(self, entry: ConfigEntry) -> None:
-        """Hold back the hub's reload-on-change; it is reloaded once at the end."""
-        if entry.entry_id not in self._touched:
-            self._touched[entry.entry_id] = entry
-            self._hass.data.setdefault(DOMAIN, {}).setdefault(MOVING, set()).add(entry.entry_id)
-
-    async def __aenter__(self) -> _Batch:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        held = self._hass.data.setdefault(DOMAIN, {}).setdefault(MOVING, set())
-        held.difference_update(self._touched)
-        await asyncio.gather(
-            *(self._hass.config_entries.async_reload(entry_id) for entry_id in self._touched)
-        )
-
-
 def _error(key: str, **placeholders: str) -> ServiceValidationError:
-    return ServiceValidationError(translation_domain=DOMAIN, translation_key=key, translation_placeholders=placeholders)
+    return ServiceValidationError(
+        translation_domain=DOMAIN, translation_key=key, translation_placeholders=placeholders
+    )
 
 
-def _identifier(hass: HomeAssistant, device_id: str) -> str | None:
-    """The id (subentry id of a spool, entry id of a box) this integration gave a device."""
-    device = dr.async_get(hass).async_get(device_id)
-    if device is None:
-        return None
-    return next((value for domain, value in device.identifiers if domain == DOMAIN), None)
+def _runtime(hass: HomeAssistant) -> FilamentRuntime:
+    if (runtime := get_runtime(hass)) is None:
+        raise _error("not_loaded")
+    return runtime
 
 
-def find_spool(hass: HomeAssistant, device_id: str) -> tuple[ConfigEntry, ConfigSubentry]:
-    """The hub and spool subentry behind a spool device."""
-    key = _identifier(hass, device_id)
-    for entry in hub_entries(hass):
-        subentry = entry.subentries.get(key) if key else None
-        if subentry is not None and subentry.subentry_type == SUBENTRY_TYPE_SPOOL:
-            return entry, subentry
-    raise _error("spool_not_found")
+def _resolve(hass: HomeAssistant, value: str, known: dict[str, Any], missing_key: str) -> str:
+    """An id of the inventory, given directly or as the id of the item's device."""
+    if value in known:
+        return value
+    if (device := dr.async_get(hass).async_get(value)) is not None:
+        for domain, identifier in device.identifiers:
+            if domain == DOMAIN and identifier in known:
+                return identifier
+    raise _error(missing_key)
 
 
-def find_box(hass: HomeAssistant, device_id: str) -> ConfigEntry:
-    """The hub behind a box device."""
-    key = _identifier(hass, device_id)
-    entry = hass.config_entries.async_get_entry(key) if key else None
-    if entry is None or entry not in hub_entries(hass):
-        raise _error("box_not_found")
-    return entry
-
-
-def _free_slot(batch: _Batch, hass: HomeAssistant, slot: str, except_subentry_id: str) -> None:
-    """A slot holds one spool: whoever was assigned to it before leaves the printer."""
-    for entry in hub_entries(hass):
-        for subentry in spool_subentries(entry):
-            if subentry.subentry_id != except_subentry_id and subentry.data.get(CONF_AMS_SLOT) == slot:
-                data = {key: value for key, value in subentry.data.items() if key != CONF_AMS_SLOT}
-                batch.touch(entry)
-                hass.config_entries.async_update_subentry(entry, subentry, data=data)
+def _guard(action):
+    """Run an inventory change, turning its rejection into a translated validation error."""
+    try:
+        return action()
+    except FilamentError as err:
+        raise _error(err.key, **err.placeholders) from err
 
 
 @callback
 def async_register_services(hass: HomeAssistant) -> None:
     """Register the management services (once, for the whole integration)."""
 
+    def spool_of(call: ServiceCall) -> tuple[FilamentRuntime, str]:
+        runtime = _runtime(hass)
+        return runtime, _resolve(hass, call.data["spool"], runtime.manager.spools, "spool_not_found")
+
+    def box_of(call: ServiceCall, runtime: FilamentRuntime, key: str = "box") -> str:
+        return _resolve(hass, call.data[key], runtime.manager.boxes, "box_not_found")
+
     async def load_spool(call: ServiceCall) -> None:
-        entry, subentry = find_spool(hass, call.data["device_id"])
+        runtime, spool_id = spool_of(call)
         slot = call.data["slot"]
         if slot not in slot_entities(hass):
             raise _error("slot_unknown", slot=slot)
-        async with _Batch(hass) as batch:
-            _free_slot(batch, hass, slot, subentry.subentry_id)
-            batch.touch(entry)
-            hass.config_entries.async_update_subentry(
-                entry, subentry, data={**subentry.data, CONF_AMS_SLOT: slot}
-            )
+        _guard(lambda: runtime.manager.assign_slot(spool_id, slot))
 
     async def unload_spool(call: ServiceCall) -> None:
-        entry, subentry = find_spool(hass, call.data["device_id"])
-        data = {key: value for key, value in subentry.data.items() if key != CONF_AMS_SLOT}
-        async with _Batch(hass) as batch:
-            batch.touch(entry)
-            hass.config_entries.async_update_subentry(entry, subentry, data=data)
+        runtime, spool_id = spool_of(call)
+        _guard(lambda: runtime.manager.assign_slot(spool_id, None))
 
     async def move_spool(call: ServiceCall) -> None:
-        source, subentry = find_spool(hass, call.data["device_id"])
-        target = find_box(hass, call.data["box_device_id"])
-        if target.entry_id == source.entry_id:
-            return
-        if (blocker := move_blocker(target)) is not None:
-            raise _error(blocker, box=target.title)
-        await async_move_spool(
-            hass, source, subentry, target, title=subentry.title, data=dict(subentry.data)
-        )
+        runtime, spool_id = spool_of(call)
+        box_id = box_of(call, runtime)
+        _guard(lambda: runtime.manager.move_spool(spool_id, box_id))
 
     async def add_spool(call: ServiceCall) -> None:
-        target = find_box(hass, call.data["box_device_id"])
-        if (blocker := move_blocker(target)) is not None:
-            raise _error(blocker, box=target.title)
-        data: dict[str, Any] = {
-            CONF_MATERIAL: call.data[CONF_MATERIAL].strip(),
-            CONF_COLOR: call.data[CONF_COLOR].strip(),
-            CONF_MANUFACTURER: call.data[CONF_MANUFACTURER].strip(),
-            CONF_DIAMETER: call.data[CONF_DIAMETER],
-        }
-        total = call.data.get(CONF_TOTAL_WEIGHT) or suggested_total_weight(
-            data[CONF_MANUFACTURER], data[CONF_MATERIAL]
+        runtime = _runtime(hass)
+        data = dict(call.data)
+        box_id = box_of(call, runtime) if data.get("box") else None
+        manufacturer, material = data[CONF_MANUFACTURER].strip(), data[CONF_MATERIAL].strip()
+        total = data.get(CONF_TOTAL_WEIGHT) or suggested_total_weight(manufacturer, material)
+        name = (data.get("name") or "").strip() or suggest_name(
+            {CONF_MANUFACTURER: manufacturer, CONF_MATERIAL: material, CONF_COLOR: data[CONF_COLOR]}
         )
-        remaining = call.data.get("remaining_weight")
-        if remaining is not None and remaining > total:
-            raise _error("remaining_exceeds_total")
-        data[CONF_TOTAL_WEIGHT] = total
-        data[CONF_INITIAL_REMAINING_WEIGHT] = total if remaining is None else remaining
-        title = (call.data.get("name") or "").strip() or _suggest_name(data)
-        async with _Batch(hass) as batch:
-            batch.touch(target)
-            hass.config_entries.async_add_subentry(
-                target,
-                ConfigSubentry(data=data, subentry_type=SUBENTRY_TYPE_SPOOL, title=title, unique_id=None),
+        details = {
+            key: data[key]
+            for key in (
+                CONF_DIAMETER,
+                CONF_LOW_STOCK_THRESHOLD,
+                CONF_NOTIFY_TARGETS,
+                CONF_PERSISTENT_NOTIFICATION,
             )
+            if key in data
+        }
+        _guard(
+            lambda: runtime.manager.add_spool(
+                name=name,
+                material=material,
+                color=data[CONF_COLOR],
+                manufacturer=manufacturer,
+                box_id=box_id,
+                sealed=box_id is None,
+                total_weight=total,
+                remaining_weight=data.get("remaining_weight", total),
+                **details,
+            )
+        )
+
+    async def update_spool(call: ServiceCall) -> None:
+        runtime, spool_id = spool_of(call)
+        changes = {key: value for key, value in call.data.items() if key != "spool"}
+        _guard(lambda: runtime.manager.update_spool(spool_id, **changes))
 
     async def remove_spool(call: ServiceCall) -> None:
-        entry, subentry = find_spool(hass, call.data["device_id"])
-        async with _Batch(hass) as batch:
-            batch.touch(entry)
-            hass.config_entries.async_remove_subentry(entry, subentry.subentry_id)
+        runtime, spool_id = spool_of(call)
+        _guard(lambda: runtime.manager.remove_spool(spool_id))
+
+    async def add_box(call: ServiceCall) -> None:
+        runtime = _runtime(hass)
+        _guard(lambda: runtime.manager.add_box(**call.data))
+
+    async def update_box(call: ServiceCall) -> None:
+        runtime = _runtime(hass)
+        box_id = box_of(call, runtime)
+        changes = {key: value for key, value in call.data.items() if key != "box"}
+        _guard(lambda: runtime.manager.update_box(box_id, **changes))
+
+    async def remove_box(call: ServiceCall) -> None:
+        runtime = _runtime(hass)
+        box_id = box_of(call, runtime)
+        _guard(lambda: runtime.manager.remove_box(box_id))
 
     for name, handler, schema in (
         (SERVICE_LOAD_SPOOL, load_spool, LOAD_SCHEMA),
-        (SERVICE_UNLOAD_SPOOL, unload_spool, DEVICE_SCHEMA),
+        (SERVICE_UNLOAD_SPOOL, unload_spool, SPOOL_SCHEMA),
         (SERVICE_MOVE_SPOOL, move_spool, MOVE_SCHEMA),
-        (SERVICE_ADD_SPOOL, add_spool, ADD_SCHEMA),
-        (SERVICE_REMOVE_SPOOL, remove_spool, DEVICE_SCHEMA),
+        (SERVICE_OPEN_SPOOL, move_spool, MOVE_SCHEMA),
+        (SERVICE_ADD_SPOOL, add_spool, ADD_SPOOL_SCHEMA),
+        (SERVICE_UPDATE_SPOOL, update_spool, UPDATE_SPOOL_SCHEMA),
+        (SERVICE_REMOVE_SPOOL, remove_spool, SPOOL_SCHEMA),
+        (SERVICE_ADD_BOX, add_box, ADD_BOX_SCHEMA),
+        (SERVICE_UPDATE_BOX, update_box, UPDATE_BOX_SCHEMA),
+        (SERVICE_REMOVE_BOX, remove_box, BOX_SCHEMA),
     ):
         hass.services.async_register(DOMAIN, name, handler, schema=schema)
-
-
-@callback
-def async_register_websocket(hass: HomeAssistant) -> None:
-    """Let the card ask for the choices its add/load dialogs offer."""
-    websocket_api.async_register_command(hass, websocket_options)
-    websocket_api.async_register_command(hass, websocket_suggest)
-
-
-def _suggestion(material: str, color: str, manufacturer: str) -> dict[str, Any]:
-    data = {CONF_MATERIAL: material.strip(), CONF_COLOR: color.strip(), CONF_MANUFACTURER: manufacturer.strip()}
-    return {
-        "name": _suggest_name(data),
-        "total_weight": suggested_total_weight(data[CONF_MANUFACTURER], data[CONF_MATERIAL]),
-    }
-
-
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/options"})
-@callback
-def websocket_options(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """Material/color/manufacturer/diameter choices and the AMS slot sensors."""
-    connection.send_result(
-        msg["id"],
-        {
-            # Sorted like the dropdowns of the setup dialog, catch-all last.
-            "materials": _sorted_options(MATERIAL_OPTIONS),
-            "colors": _sorted_options(COLOR_OPTIONS),
-            "manufacturers": _sorted_options(MANUFACTURER_OPTIONS),
-            "default_material": DEFAULT_MATERIAL,
-            "default_color": COLOR_OPTIONS[0],
-            # What the add dialog starts with (its first manufacturer), so it can open complete.
-            "default_suggestion": _suggestion(
-                DEFAULT_MATERIAL, COLOR_OPTIONS[0], _sorted_options(MANUFACTURER_OPTIONS)[0]
-            ),
-            "diameters": [option["value"] for option in DIAMETER_OPTIONS],
-            "slots": slot_entities(hass),
-        },
-    )
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): f"{DOMAIN}/suggest",
-        vol.Required(CONF_MATERIAL): cv.string,
-        vol.Required(CONF_COLOR): cv.string,
-        vol.Required(CONF_MANUFACTURER): cv.string,
-    }
-)
-@callback
-def websocket_suggest(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """The name and total weight the setup dialog would suggest for these choices."""
-    connection.send_result(
-        msg["id"], _suggestion(msg[CONF_MATERIAL], msg[CONF_COLOR], msg[CONF_MANUFACTURER])
-    )
