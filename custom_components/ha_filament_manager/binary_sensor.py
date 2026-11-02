@@ -96,6 +96,7 @@ class FilamentHumidityAlert(BinarySensorEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "humidity_alert"
     _attr_device_class = BinarySensorDeviceClass.MOISTURE
     _attr_icon = "mdi:water-percent"
@@ -210,6 +211,7 @@ class FilamentLowStockAlert(BinarySensorEntity):
     """Warns when a spool's remaining amount drops below a configured threshold."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "low_stock_alert"
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_icon = "mdi:package-variant-minus"

@@ -7,12 +7,13 @@ and entities (entity ids, names, history, areas, ...) are simply re-pointed
 at the target hub instead of being deleted and created anew.
 
 Order matters: the source hub is unloaded first (so no entity of the spool is
-alive twice), the target hub's reload-on-change is held back while the
-registries are re-pointed, then the spool leaves the source hub, the target
-reloads (and finds everything in place) and the source is set up again.
+alive twice) and so is the target (which then does not reload on every
+change), the registries are re-pointed, the spool leaves the source hub, and
+both boxes are set up again - the target finds everything in place.
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
 from typing import Any
 
@@ -23,7 +24,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .ams import async_move_learned_rfid
 from .boxes import spool_subentries
-from .const import CONF_SPOOL_LIMIT, DOMAIN, MOVING, SUBENTRY_TYPE_SPOOL
+from .const import CONF_SPOOL_LIMIT, DOMAIN, SUBENTRY_TYPE_SPOOL
 from .entity import hub_device_id
 
 
@@ -53,10 +54,12 @@ async def async_move_spool(
     """Move ``subentry`` from ``source`` to ``target``, saving ``title``/``data`` with it."""
     subentry_id = subentry.subentry_id
 
-    # No entity of the spool may be alive while the target creates it again.
-    await hass.config_entries.async_unload(source.entry_id)
-    moving = hass.data.setdefault(DOMAIN, {}).setdefault(MOVING, set())
-    moving.add(target.entry_id)
+    # No entity of the spool may be alive while the target creates it again, and
+    # an unloaded target does not reload on every change: both boxes are taken
+    # down together, changed, and brought back together.
+    await asyncio.gather(
+        hass.config_entries.async_unload(source.entry_id), hass.config_entries.async_unload(target.entry_id)
+    )
     try:
         await async_move_learned_rfid(hass, source, target, subentry_id)
 
@@ -73,10 +76,9 @@ async def async_move_spool(
         _repoint_registries(hass, source, target, subentry_id)
         hass.config_entries.async_remove_subentry(source, subentry_id)
     finally:
-        moving.discard(target.entry_id)
-        # The held-back reload of the target, then the source comes back without the spool.
-        await hass.config_entries.async_reload(target.entry_id)
-        await hass.config_entries.async_setup(source.entry_id)
+        await asyncio.gather(
+            hass.config_entries.async_setup(source.entry_id), hass.config_entries.async_setup(target.entry_id)
+        )
 
 
 def _repoint_registries(

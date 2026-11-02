@@ -6,6 +6,7 @@ box's) device, which is what the card knows.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import voluptuous as vol
@@ -35,6 +36,7 @@ from .const import (
     DIAMETER_OPTIONS,
     DOMAIN,
     MANUFACTURER_OPTIONS,
+    MOVING,
     MATERIAL_OPTIONS,
     SERVICE_ADD_SPOOL,
     SERVICE_LOAD_SPOOL,
@@ -63,6 +65,35 @@ ADD_SCHEMA = vol.Schema(
         vol.Optional("remaining_weight"): _WEIGHT,
     }
 )
+
+
+class _Batch:
+    """Changes to hubs' spools, followed by one reload of each touched hub.
+
+    The reload happens before the service call returns, so the card knows
+    when the change has really arrived (and a hub is not reloaded once per
+    changed spool).
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
+        self._touched: dict[str, ConfigEntry] = {}
+
+    def touch(self, entry: ConfigEntry) -> None:
+        """Hold back the hub's reload-on-change; it is reloaded once at the end."""
+        if entry.entry_id not in self._touched:
+            self._touched[entry.entry_id] = entry
+            self._hass.data.setdefault(DOMAIN, {}).setdefault(MOVING, set()).add(entry.entry_id)
+
+    async def __aenter__(self) -> _Batch:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        held = self._hass.data.setdefault(DOMAIN, {}).setdefault(MOVING, set())
+        held.difference_update(self._touched)
+        await asyncio.gather(
+            *(self._hass.config_entries.async_reload(entry_id) for entry_id in self._touched)
+        )
 
 
 def _error(key: str, **placeholders: str) -> ServiceValidationError:
@@ -96,12 +127,13 @@ def find_box(hass: HomeAssistant, device_id: str) -> ConfigEntry:
     return entry
 
 
-def _free_slot(hass: HomeAssistant, slot: str, except_subentry_id: str) -> None:
+def _free_slot(batch: _Batch, hass: HomeAssistant, slot: str, except_subentry_id: str) -> None:
     """A slot holds one spool: whoever was assigned to it before leaves the printer."""
     for entry in hub_entries(hass):
         for subentry in spool_subentries(entry):
             if subentry.subentry_id != except_subentry_id and subentry.data.get(CONF_AMS_SLOT) == slot:
                 data = {key: value for key, value in subentry.data.items() if key != CONF_AMS_SLOT}
+                batch.touch(entry)
                 hass.config_entries.async_update_subentry(entry, subentry, data=data)
 
 
@@ -114,15 +146,19 @@ def async_register_services(hass: HomeAssistant) -> None:
         slot = call.data["slot"]
         if slot not in slot_entities(hass):
             raise _error("slot_unknown", slot=slot)
-        _free_slot(hass, slot, subentry.subentry_id)
-        hass.config_entries.async_update_subentry(
-            entry, subentry, data={**subentry.data, CONF_AMS_SLOT: slot}
-        )
+        async with _Batch(hass) as batch:
+            _free_slot(batch, hass, slot, subentry.subentry_id)
+            batch.touch(entry)
+            hass.config_entries.async_update_subentry(
+                entry, subentry, data={**subentry.data, CONF_AMS_SLOT: slot}
+            )
 
     async def unload_spool(call: ServiceCall) -> None:
         entry, subentry = find_spool(hass, call.data["device_id"])
         data = {key: value for key, value in subentry.data.items() if key != CONF_AMS_SLOT}
-        hass.config_entries.async_update_subentry(entry, subentry, data=data)
+        async with _Batch(hass) as batch:
+            batch.touch(entry)
+            hass.config_entries.async_update_subentry(entry, subentry, data=data)
 
     async def move_spool(call: ServiceCall) -> None:
         source, subentry = find_spool(hass, call.data["device_id"])
@@ -154,14 +190,18 @@ def async_register_services(hass: HomeAssistant) -> None:
         data[CONF_TOTAL_WEIGHT] = total
         data[CONF_INITIAL_REMAINING_WEIGHT] = total if remaining is None else remaining
         title = (call.data.get("name") or "").strip() or _suggest_name(data)
-        hass.config_entries.async_add_subentry(
-            target,
-            ConfigSubentry(data=data, subentry_type=SUBENTRY_TYPE_SPOOL, title=title, unique_id=None),
-        )
+        async with _Batch(hass) as batch:
+            batch.touch(target)
+            hass.config_entries.async_add_subentry(
+                target,
+                ConfigSubentry(data=data, subentry_type=SUBENTRY_TYPE_SPOOL, title=title, unique_id=None),
+            )
 
     async def remove_spool(call: ServiceCall) -> None:
         entry, subentry = find_spool(hass, call.data["device_id"])
-        hass.config_entries.async_remove_subentry(entry, subentry.subentry_id)
+        async with _Batch(hass) as batch:
+            batch.touch(entry)
+            hass.config_entries.async_remove_subentry(entry, subentry.subentry_id)
 
     for name, handler, schema in (
         (SERVICE_LOAD_SPOOL, load_spool, LOAD_SCHEMA),
@@ -180,6 +220,14 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_suggest)
 
 
+def _suggestion(material: str, color: str, manufacturer: str) -> dict[str, Any]:
+    data = {CONF_MATERIAL: material.strip(), CONF_COLOR: color.strip(), CONF_MANUFACTURER: manufacturer.strip()}
+    return {
+        "name": _suggest_name(data),
+        "total_weight": suggested_total_weight(data[CONF_MANUFACTURER], data[CONF_MATERIAL]),
+    }
+
+
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/options"})
 @callback
 def websocket_options(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
@@ -193,6 +241,10 @@ def websocket_options(hass: HomeAssistant, connection: websocket_api.ActiveConne
             "manufacturers": _sorted_options(MANUFACTURER_OPTIONS),
             "default_material": DEFAULT_MATERIAL,
             "default_color": COLOR_OPTIONS[0],
+            # What the add dialog starts with (its first manufacturer), so it can open complete.
+            "default_suggestion": _suggestion(
+                DEFAULT_MATERIAL, COLOR_OPTIONS[0], _sorted_options(MANUFACTURER_OPTIONS)[0]
+            ),
             "diameters": [option["value"] for option in DIAMETER_OPTIONS],
             "slots": slot_entities(hass),
         },
@@ -210,11 +262,6 @@ def websocket_options(hass: HomeAssistant, connection: websocket_api.ActiveConne
 @callback
 def websocket_suggest(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """The name and total weight the setup dialog would suggest for these choices."""
-    data = {key: msg[key].strip() for key in (CONF_MATERIAL, CONF_COLOR, CONF_MANUFACTURER)}
     connection.send_result(
-        msg["id"],
-        {
-            "name": _suggest_name(data),
-            "total_weight": suggested_total_weight(data[CONF_MANUFACTURER], data[CONF_MATERIAL]),
-        },
+        msg["id"], _suggestion(msg[CONF_MATERIAL], msg[CONF_COLOR], msg[CONF_MANUFACTURER])
     )

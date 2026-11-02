@@ -102,6 +102,7 @@ class FilamentMaterialSensor(SensorEntity):
     """The material type of the spool (e.g. PLA, PETG)."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "material"
     _attr_icon = "mdi:flask-outline"
 
@@ -120,6 +121,7 @@ class FilamentColorSensor(SensorEntity):
     """The color of the spool."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "color"
     _attr_icon = "mdi:palette"
 
