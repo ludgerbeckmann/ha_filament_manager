@@ -255,10 +255,14 @@ Manager den Fortschritt eines Drucks als **Live Activity auf iPhone und iPad**
 (bei Android als Live-Update) – eine eigene Automation ist nicht mehr nötig:
 
 - Während der Vorbereitung, des Drucks und der Pause bleibt **eine**
-  Benachrichtigung aktuell: Fortschrittsbalken, `noch 1 h 5 min · Auftrag`,
-  bei Pause `⏸ Pausiert · Auftrag`, grünes bzw. orangefarbenes Symbol. Auf
-  Wunsch steht dahinter die **verwendete Spule** (aus dem aktiven AMS-Slot,
-  wenn die Spule dort eingetragen ist), z. B. `· PETG Rot (82 %)`.
+  Benachrichtigung aktuell: Titel (der **Anzeigename**), Fortschrittsbalken mit
+  Prozent, darunter z. B. `Druckt · fertig ca. 15:04 · Auftrag`, bei Pause
+  `⏸ Pausiert · Auftrag`, grünes bzw. orangefarbenes Symbol. Wie in der
+  Bambu-App läuft die **Restzeit als Countdown** auf dem Gerät mit (er tickt
+  von allein, es sind keine Updates pro Minute nötig); ohne Countdown steht
+  `noch 1 h 5 min` im Text. Auf Wunsch steht dahinter die **verwendete
+  Spule** (aus dem aktiven AMS-Slot, wenn die Spule dort eingetragen ist),
+  z. B. `· PETG Rot (82 %)`.
 - Am Ende wird die Live Activity entfernt und durch `✅ … Druck fertig` bzw.
   `❌ … Druck fehlgeschlagen` ersetzt. Geht der Drucker auf Leerlauf oder
   offline, verschwindet sie ebenfalls.
@@ -267,9 +271,15 @@ Manager den Fortschritt eines Drucks als **Live Activity auf iPhone und iPad**
   der App müssen Live Activities erlaubt sein.
 
 Einrichten: Karte → Stift-Symbol → **Druck-Benachrichtigung** (Drucker, Ziele,
-optional eine Seite, die beim Antippen geöffnet wird). Mit **Speichern und
+Anzeigename, Countdown, optional eine Seite, die beim Antippen geöffnet wird).
+Ohne eigenen **Anzeigename** nimmt der Filament Manager den Namen des Druckers
+ohne Seriennummer: aus `P1S_01P09C482100602` wird `Bambu Lab P1S`. Mit **Speichern und
 testen** erscheint eine Beispiel-Live-Activity, die nach 30 Sekunden wieder
-verschwindet. Dieselben Einstellungen gibt es als Dienste
+verschwindet. Aussehen: Die Live Activity zeichnet die Home-Assistant-App
+selbst (Titel, Text, Fortschrittsbalken, Prozent, Symbol, Countdown); das
+schwarze Layout der Bambu-App mit „Time Left“ und „ETA“ lässt sich damit nicht
+nachbauen, aber Inhalt und Countdown kommen ihm nah. Dieselben Einstellungen
+gibt es als Dienste
 `set_print_notification` und `test_print_notification`.
 
 ## Dashboard-Karte

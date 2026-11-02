@@ -924,9 +924,12 @@ class FilamentManagerCard extends HTMLElement {
         enabled: m.querySelector("#enabled").checked,
         printer: printerOptions ? m.querySelector("#printer").value : "",
         targets: this._checked(m, "targets"),
+        name: m.querySelector("#name").value.trim(),
         url: m.querySelector("#url").value.trim(),
         show_filament: m.querySelector("#show_filament").checked,
+        countdown: m.querySelector("#countdown").checked,
       });
+    const defaultName = (printers.find((p) => p.serial === chosen) || printers[0] || {}).name || "";
     this._showModal(
       "Druck-Benachrichtigung",
       "Zeigt den Fortschritt eines Bambu-Lab-Drucks als Live Activity auf iPhone/iPad (Live-Update bei Android) und meldet das Ende des Drucks.",
@@ -941,8 +944,11 @@ class FilamentManagerCard extends HTMLElement {
            ? this._checkList("targets", "Ziele (Companion-Apps)", print.notify_services, print.targets, labels)
            : `<p>Keine Companion-App gefunden (notify.mobile_app_…).</p>`
        }
+       <label for="name">Anzeigename (leer = ${esc(defaultName || "Name des Druckers")})</label>
+       <input id="name" autocomplete="off" placeholder="${esc(defaultName)}" value="${esc(print.name || "")}" />
        <label for="url">Beim Antippen öffnen (optional, z. B. /dashboard-3d-drucker)</label>
        <input id="url" autocomplete="off" value="${esc(print.url)}" />
+       <label class="check"><input type="checkbox" id="countdown" ${print.countdown !== false ? "checked" : ""} /> Restzeit als laufenden Countdown zeigen (wie die Bambu-App)</label>
        <label class="check"><input type="checkbox" id="show_filament" ${print.show_filament ? "checked" : ""} /> Verwendete Spule nennen</label>`,
       [
         { label: "Speichern", busy: "Wird gespeichert", kind: "primary", run: save },

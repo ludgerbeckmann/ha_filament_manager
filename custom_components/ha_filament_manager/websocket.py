@@ -103,8 +103,10 @@ def build_snapshot(hass: HomeAssistant, runtime: FilamentRuntime) -> dict[str, A
         "enabled": settings.enabled,
         "printer": settings.printer,
         "targets": settings.targets,
+        "name": settings.name,
         "url": settings.url,
         "show_filament": settings.show_filament,
+        "countdown": settings.countdown,
         "printers": [{"serial": printer.serial, "name": printer.name} for printer in printers(hass)],
         "notify_services": notify_services(hass),
     }

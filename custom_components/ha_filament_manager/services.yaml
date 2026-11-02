@@ -346,12 +346,21 @@ set_print_notification:
       example: '["mobile_app_iphone"]'
       selector:
         object:
+    name:
+      required: false
+      example: Bambu Lab P1S
+      selector:
+        text:
     url:
       required: false
       example: /dashboard-3d-drucker
       selector:
         text:
     show_filament:
+      required: false
+      selector:
+        boolean:
+    countdown:
       required: false
       selector:
         boolean:

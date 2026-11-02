@@ -100,8 +100,10 @@ class PrintSettings:
     enabled: bool = False
     printer: str | None = None  # serial of the printer; None = the only one there is
     targets: list[str] = field(default_factory=list)  # notify services, e.g. "mobile_app_iphone"
+    name: str = ""  # shown as the title; empty = derived from the printer's device name
     url: str = ""  # opened when the notification is tapped
     show_filament: bool = True  # name the spool in use
+    countdown: bool = True  # a running countdown of the remaining time, like the Bambu app
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> PrintSettings:
@@ -376,7 +378,7 @@ class FilamentManager:
                 continue
             if key == "printer":
                 value = value or None
-            elif key == "url":
+            elif key in ("url", "name"):
                 value = (value or "").strip()
             setattr(self.print_settings, key, value)
         self._changed(structure=True)
