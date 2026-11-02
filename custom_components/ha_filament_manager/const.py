@@ -192,6 +192,8 @@ SERVICE_REFILL_SPOOL: Final = "refill_spool"
 SERVICE_LOAD_SPOOL: Final = "load_spool"
 SERVICE_UPDATE_SPOOL: Final = "update_spool"
 SERVICE_OPEN_SPOOL: Final = "open_spool"
+SERVICE_SET_PRINT_NOTIFICATION: Final = "set_print_notification"
+SERVICE_TEST_PRINT_NOTIFICATION: Final = "test_print_notification"
 SERVICE_ADD_BOX: Final = "add_box"
 SERVICE_UPDATE_BOX: Final = "update_box"
 SERVICE_REMOVE_BOX: Final = "remove_box"
@@ -206,7 +208,7 @@ CARD_FILENAME: Final = "filament-manager-card.js"
 CARD_URL_PATH: Final = f"/{DOMAIN}_files/{CARD_FILENAME}"
 # Bump whenever the card's JS changes, to bust browser caching of the
 # static file (independent of the integration's own manifest version).
-CARD_VERSION: Final = "22"
+CARD_VERSION: Final = "23"
 
 
 SIGNAL_SNAPSHOT_DIRTY: Final = f"{DOMAIN}_snapshot_dirty"

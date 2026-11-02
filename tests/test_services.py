@@ -200,3 +200,4 @@ async def test_the_card_is_served_and_registered(hass: HomeAssistant, hass_clien
     body = await resp.text()
     assert 'customElements.define("filament-manager-card"' in body
     assert "/subscribe" in body and "show_stock" in body and "group_by" in body
+    assert "set_print_notification" in body and "test_print_notification" in body

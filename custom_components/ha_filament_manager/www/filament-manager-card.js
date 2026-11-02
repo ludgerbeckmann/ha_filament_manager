@@ -207,7 +207,7 @@ class FilamentManagerCard extends HTMLElement {
       ...spool,
       boxName: spool.box_id && boxes[spool.box_id] ? boxes[spool.box_id].name : null,
     }));
-    return { boxes, spools, slots: snapshot.slots || [], cloud: snapshot.cloud };
+    return { boxes, spools, slots: snapshot.slots || [], cloud: snapshot.cloud, print: snapshot.print_notification };
   }
 
   /**
@@ -426,7 +426,8 @@ class FilamentManagerCard extends HTMLElement {
     }
     const buttons =
       this._editMode && this._canManage() && data
-        ? `<div class="add-row"><button class="add-btn" data-action="add-spool">Spule anlegen</button><button class="add-btn" data-action="add-box">Box anlegen</button></div>`
+        ? `<div class="add-row"><button class="add-btn" data-action="add-spool">Spule anlegen</button><button class="add-btn" data-action="add-box">Box anlegen</button></div>
+           ${data.print ? `<div class="add-row"><button class="add-btn" data-action="print-notification">Druck-Benachrichtigung${data.print.enabled ? " (aktiv)" : ""}</button></div>` : ""}`
         : "";
 
     this.shadowRoot.innerHTML = `
@@ -781,10 +782,11 @@ class FilamentManagerCard extends HTMLElement {
   }
 
   /** A list of checkboxes (e.g. the notification targets); `modal.querySelectorAll('[name=id]:checked')` reads it back. */
-  _checkList(id, label, items, selected) {
+  _checkList(id, label, items, selected, labels = {}) {
     const all = [...new Set([...items, ...selected])];
     if (!all.length) return "";
-    const name = (entityId) => (this._hass.states[entityId] && this._hass.states[entityId].attributes.friendly_name) || entityId;
+    const name = (entityId) =>
+      labels[entityId] || (this._hass.states[entityId] && this._hass.states[entityId].attributes.friendly_name) || entityId;
     return `<label>${esc(label)}</label>
       <div class="checks">${all
         .map(
@@ -859,7 +861,59 @@ class FilamentManagerCard extends HTMLElement {
       this._dialogBox(null, data);
     } else if (kind === "edit-box" && box) {
       this._dialogBox(box, data);
+    } else if (kind === "print-notification" && data.print) {
+      this._dialogPrintNotification(data.print);
     }
+  }
+
+  /** The Live Activity for Bambu Lab prints: printer, targets (Companion apps), what to show. */
+  _dialogPrintNotification(print) {
+    const printers = print.printers || [];
+    const chosen = print.printer || (printers[0] && printers[0].serial) || "";
+    const printerOptions = printers
+      .map((p) => `<option value="${esc(p.serial)}" ${p.serial === chosen ? "selected" : ""}>${esc(p.name)}</option>`)
+      .join("");
+    // "mobile_app_iphone_ludger" -> "iphone ludger"
+    const labels = Object.fromEntries(
+      print.notify_services.map((name) => [name, name.replace(/^mobile_app_/, "").replace(/_/g, " ")])
+    );
+    const save = (m) =>
+      this._call("set_print_notification", {
+        enabled: m.querySelector("#enabled").checked,
+        printer: printerOptions ? m.querySelector("#printer").value : "",
+        targets: this._checked(m, "targets"),
+        url: m.querySelector("#url").value.trim(),
+        show_filament: m.querySelector("#show_filament").checked,
+      });
+    this._showModal(
+      "Druck-Benachrichtigung",
+      "Zeigt den Fortschritt eines Bambu-Lab-Drucks als Live Activity auf iPhone/iPad (Live-Update bei Android) und meldet das Ende des Drucks.",
+      `<label class="check"><input type="checkbox" id="enabled" ${print.enabled ? "checked" : ""} /> Aktiv</label>
+       ${
+         printerOptions
+           ? `<label for="printer">Drucker</label><select id="printer">${printerOptions}</select>`
+           : `<p>Keine Bambu-Lab-Drucker gefunden (Integration ha-bambulab nötig).</p>`
+       }
+       ${
+         print.notify_services.length || print.targets.length
+           ? this._checkList("targets", "Ziele (Companion-Apps)", print.notify_services, print.targets, labels)
+           : `<p>Keine Companion-App gefunden (notify.mobile_app_…).</p>`
+       }
+       <label for="url">Beim Antippen öffnen (optional, z. B. /dashboard-3d-drucker)</label>
+       <input id="url" autocomplete="off" value="${esc(print.url)}" />
+       <label class="check"><input type="checkbox" id="show_filament" ${print.show_filament ? "checked" : ""} /> Verwendete Spule nennen</label>`,
+      [
+        { label: "Speichern", busy: "Wird gespeichert", kind: "primary", run: save },
+        {
+          label: "Speichern und testen",
+          busy: "Wird gesendet",
+          run: async (m) => {
+            await save(m);
+            await this._call("test_print_notification", {});
+          },
+        },
+      ]
+    );
   }
 
   _dialogLoad(spool, data) {

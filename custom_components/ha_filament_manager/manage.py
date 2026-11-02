@@ -39,6 +39,8 @@ from .const import (
     SERVICE_OPEN_SPOOL,
     SERVICE_REMOVE_BOX,
     SERVICE_REMOVE_SPOOL,
+    SERVICE_SET_PRINT_NOTIFICATION,
+    SERVICE_TEST_PRINT_NOTIFICATION,
     SERVICE_UNLOAD_SPOOL,
     SERVICE_UPDATE_BOX,
     SERVICE_UPDATE_SPOOL,
@@ -102,6 +104,18 @@ UPDATE_SPOOL_SCHEMA = vol.Schema(
         vol.Optional("cloud_sync"): cv.boolean,
     }
 )
+
+
+PRINT_NOTIFICATION_SCHEMA = vol.Schema(
+    {
+        vol.Optional("enabled"): cv.boolean,
+        vol.Optional("printer"): vol.Any(None, "", cv.string),
+        vol.Optional("targets"): vol.All(cv.ensure_list, [cv.string]),
+        vol.Optional("url"): cv.string,
+        vol.Optional("show_filament"): cv.boolean,
+    }
+)
+EMPTY_SCHEMA = vol.Schema({})
 
 
 def _error(key: str, **placeholders: str) -> ServiceValidationError:
@@ -219,7 +233,19 @@ def async_register_services(hass: HomeAssistant) -> None:
         box_id = box_of(call, runtime)
         _guard(lambda: runtime.manager.remove_box(box_id))
 
+    async def set_print_notification(call: ServiceCall) -> None:
+        runtime = _runtime(hass)
+        runtime.manager.set_print_settings(**call.data)
+
+    async def test_print_notification(call: ServiceCall) -> None:
+        runtime = _runtime(hass)
+        if not runtime.manager.print_settings.targets:
+            raise _error("no_print_targets")
+        await runtime.printing.async_send_test()
+
     for name, handler, schema in (
+        (SERVICE_SET_PRINT_NOTIFICATION, set_print_notification, PRINT_NOTIFICATION_SCHEMA),
+        (SERVICE_TEST_PRINT_NOTIFICATION, test_print_notification, EMPTY_SCHEMA),
         (SERVICE_LOAD_SPOOL, load_spool, LOAD_SCHEMA),
         (SERVICE_UNLOAD_SPOOL, unload_spool, SPOOL_SCHEMA),
         (SERVICE_MOVE_SPOOL, move_spool, MOVE_SCHEMA),

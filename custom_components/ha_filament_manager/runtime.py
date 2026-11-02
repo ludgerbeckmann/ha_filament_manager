@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from .ams import AmsTracker
 from .cloud_sync import CloudSync
 from .const import DOMAIN
+from .printing import PrintNotifier
 from .store import FilamentManager
 
 
@@ -17,6 +18,7 @@ class FilamentRuntime:
     manager: FilamentManager
     ams: AmsTracker
     cloud: CloudSync
+    printing: PrintNotifier
     # Called (without arguments) whenever boxes or spools were added, changed or removed.
     syncers: list[Callable[[], None]] = field(default_factory=list)
 
