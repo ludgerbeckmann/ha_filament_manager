@@ -39,6 +39,7 @@ from .const import (
     SERVICE_OPEN_SPOOL,
     SERVICE_REMOVE_BOX,
     SERVICE_REMOVE_SPOOL,
+    SERVICE_SET_ALERT_NOTIFICATIONS,
     SERVICE_SET_PRINT_NOTIFICATION,
     SERVICE_TEST_PRINT_NOTIFICATION,
     SERVICE_UNLOAD_SPOOL,
@@ -59,8 +60,6 @@ _BOX_SETTINGS = {
     vol.Optional(CONF_HUMIDITY_SENSOR): _OPTIONAL_ENTITY,
     vol.Optional(CONF_HUMIDITY_MAX): _OPTIONAL_NUMBER,
     vol.Optional(CONF_HUMIDITY_DELAY): _OPTIONAL_NUMBER,
-    vol.Optional(CONF_NOTIFY_TARGETS): _ENTITY_LIST,
-    vol.Optional(CONF_PERSISTENT_NOTIFICATION): cv.boolean,
     vol.Optional(CONF_SPOOL_LIMIT): vol.Any(None, "", vol.Coerce(int)),
 }
 _NAME = vol.All(cv.string, vol.Length(min=1))
@@ -83,8 +82,6 @@ ADD_SPOOL_SCHEMA = vol.Schema(
         vol.Optional(CONF_TOTAL_WEIGHT): _WEIGHT,
         vol.Optional("remaining_weight"): _WEIGHT,
         vol.Optional(CONF_LOW_STOCK_THRESHOLD): _OPTIONAL_NUMBER,
-        vol.Optional(CONF_NOTIFY_TARGETS): _ENTITY_LIST,
-        vol.Optional(CONF_PERSISTENT_NOTIFICATION): cv.boolean,
     }
 )
 UPDATE_SPOOL_SCHEMA = vol.Schema(
@@ -97,8 +94,6 @@ UPDATE_SPOOL_SCHEMA = vol.Schema(
         vol.Optional(CONF_DIAMETER): cv.string,
         vol.Optional(CONF_TOTAL_WEIGHT): _WEIGHT,
         vol.Optional(CONF_LOW_STOCK_THRESHOLD): _OPTIONAL_NUMBER,
-        vol.Optional(CONF_NOTIFY_TARGETS): _ENTITY_LIST,
-        vol.Optional(CONF_PERSISTENT_NOTIFICATION): cv.boolean,
         vol.Optional("ams_sync"): cv.boolean,
         vol.Optional("cloud_spool"): vol.Any(None, "", cv.string),
         vol.Optional("cloud_sync"): cv.boolean,
@@ -115,6 +110,12 @@ PRINT_NOTIFICATION_SCHEMA = vol.Schema(
         vol.Optional("url"): cv.string,
         vol.Optional("show_filament"): cv.boolean,
         vol.Optional("countdown"): cv.boolean,
+    }
+)
+ALERT_NOTIFICATIONS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_NOTIFY_TARGETS): _ENTITY_LIST,
+        vol.Optional(CONF_PERSISTENT_NOTIFICATION): cv.boolean,
     }
 )
 EMPTY_SCHEMA = vol.Schema({})
@@ -189,12 +190,7 @@ def async_register_services(hass: HomeAssistant) -> None:
         )
         details = {
             key: data[key]
-            for key in (
-                CONF_DIAMETER,
-                CONF_LOW_STOCK_THRESHOLD,
-                CONF_NOTIFY_TARGETS,
-                CONF_PERSISTENT_NOTIFICATION,
-            )
+            for key in (CONF_DIAMETER, CONF_LOW_STOCK_THRESHOLD)
             if key in data
         }
         _guard(
@@ -239,6 +235,12 @@ def async_register_services(hass: HomeAssistant) -> None:
         runtime = _runtime(hass)
         runtime.manager.set_print_settings(**call.data)
 
+    async def set_alert_notifications(call: ServiceCall) -> None:
+        runtime = _runtime(hass)
+        runtime.manager.set_alert_settings(
+            targets=call.data.get(CONF_NOTIFY_TARGETS), persistent=call.data.get(CONF_PERSISTENT_NOTIFICATION)
+        )
+
     async def test_print_notification(call: ServiceCall) -> None:
         runtime = _runtime(hass)
         if not runtime.manager.print_settings.targets:
@@ -246,6 +248,7 @@ def async_register_services(hass: HomeAssistant) -> None:
         await runtime.printing.async_send_test()
 
     for name, handler, schema in (
+        (SERVICE_SET_ALERT_NOTIFICATIONS, set_alert_notifications, ALERT_NOTIFICATIONS_SCHEMA),
         (SERVICE_SET_PRINT_NOTIFICATION, set_print_notification, PRINT_NOTIFICATION_SCHEMA),
         (SERVICE_TEST_PRINT_NOTIFICATION, test_print_notification, EMPTY_SCHEMA),
         (SERVICE_LOAD_SPOOL, load_spool, LOAD_SCHEMA),

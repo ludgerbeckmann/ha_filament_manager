@@ -153,7 +153,8 @@ class FilamentHumidityAlert(BinarySensorEntity):
             return
         async_handle_alert_transition(
             self.hass,
-            self._box,
+            self._manager,
+            self._box_id,
             kind="humidity",
             was_on=was_on,
             is_on=self._attr_is_on,
@@ -236,7 +237,8 @@ class FilamentLowStockAlert(BinarySensorEntity):
         self.async_write_ha_state()
         async_handle_alert_transition(
             self.hass,
-            spool,
+            self._manager,
+            spool.id,
             kind="low_stock",
             was_on=was_on,
             is_on=self._attr_is_on,

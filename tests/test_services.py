@@ -21,9 +21,9 @@ async def call(hass: HomeAssistant, service: str, **data) -> None:
 async def test_boxes_can_be_added_edited_and_removed(hass: HomeAssistant) -> None:
     entry, runtime = await setup_inventory(hass)
     manager = runtime.manager
-    await call(hass, "add_box", name="Box A", humidity_max=45, spool_limit=3, notify_targets=["notify.me"])
+    await call(hass, "add_box", name="Box A", humidity_max=45, spool_limit=3)
     (box,) = manager.boxes.values()
-    assert (box.name, box.humidity_max, box.spool_limit, box.notify_targets) == ("Box A", 45, 3, ["notify.me"])
+    assert (box.name, box.humidity_max, box.spool_limit) == ("Box A", 45, 3)
     assert hass.states.get("sensor.box_a_spools").state == "0"
 
     await call(hass, "update_box", box=box.id, name="Box B", spool_limit="", humidity_max="")
@@ -177,6 +177,7 @@ async def test_options_and_suggestions(hass: HomeAssistant, hass_ws_client) -> N
     result = (await client.receive_json())["result"]
     assert result["materials"][0] == "ABS" and result["materials"][-1] == "Sonstiges"  # sorted, catch-all last
     assert result["manufacturers"][-1] == "Sonstiges"
+    assert "Anycubic" in result["manufacturers"] and {"Cyan", "Magenta"} <= set(result["colors"])
     assert result["default_material"] == "PETG" and "Schwarz" in result["colors"]
     assert result["diameters"] == ["1.75", "2.85"]
     assert result["default_suggestion"] == {"name": "3DJake PETG Schwarz", "total_weight": 1000}

@@ -153,7 +153,8 @@ async def test_humidity_alert_notifies_and_dismisses(hass: HomeAssistant) -> Non
     async_dispatcher_connect(
         hass, pn.SIGNAL_PERSISTENT_NOTIFICATIONS_UPDATED, lambda kind, items: events.append(kind)
     )
-    await _humid_box(hass, notify_targets=["notify.fake_target"], persistent_notification=True)
+    entry, manager = await _humid_box(hass)
+    manager.set_alert_settings(targets=["notify.fake_target"], persistent=True)
 
     hass.states.async_set(SENSOR, "55")
     await hass.async_block_till_done()
@@ -199,9 +200,55 @@ async def test_low_stock_alert_notifies(hass: HomeAssistant) -> None:
         sent.append(dict(call.data))
 
     hass.services.async_register("notify", "send_message", _fake_send_message)
-    await setup_with_spool(hass, spool={"low_stock_threshold": 20, "notify_targets": ["notify.phone"]})
+    entry, manager = await setup_with_spool(hass, spool={"low_stock_threshold": 20})
+    manager.set_alert_settings(targets=["notify.phone"])
     await hass.services.async_call(DOMAIN, "consume_filament", {"entity_id": NUMBER, "amount": 650}, blocking=True)
     await hass.async_block_till_done()
     assert len(sent) == 1
     assert sent[0]["entity_id"] == "notify.phone"
     assert "Bestand niedrig" in sent[0]["title"]
+
+
+async def test_where_alerts_go_is_one_setting_for_every_box_and_spool(hass: HomeAssistant) -> None:
+    sent = []
+
+    async def _fake_send_message(call):
+        sent.append(call.data["title"])
+
+    hass.services.async_register("notify", "send_message", _fake_send_message)
+    hass.states.async_set(SENSOR, "30")
+    hass.states.async_set("sensor.other_humidity", "30")
+    entry, manager = await setup_with_spool(
+        hass, box={"humidity_sensor": SENSOR, "humidity_max": 40, "humidity_delay": 0}, spool={"low_stock_threshold": 20}
+    )
+    manager.add_box("Second Box", humidity_sensor="sensor.other_humidity", humidity_max=40, humidity_delay=0)
+    await hass.services.async_call(
+        DOMAIN, "set_alert_notifications", {"notify_targets": ["notify.phone"], "persistent_notification": False}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    hass.states.async_set(SENSOR, "60")  # a box ...
+    hass.states.async_set("sensor.other_humidity", "60")  # ... and another one
+    await hass.services.async_call(DOMAIN, "consume_filament", {"entity_id": NUMBER, "amount": 700}, blocking=True)  # a spool
+    await hass.async_block_till_done()
+    assert len(sent) == 3
+    assert manager.alert_settings.targets == ["notify.phone"] and manager.alert_settings.persistent is False
+
+
+async def test_targets_of_older_versions_become_the_common_ones(hass: HomeAssistant, hass_storage) -> None:
+    """Until 1.3 every box and spool had its own targets."""
+    hass_storage[f"{DOMAIN}.data"] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": f"{DOMAIN}.data",
+        "data": {
+            "boxes": [
+                {"id": "b1", "name": "Box", "notify_targets": ["notify.a"], "persistent_notification": False},
+                {"id": "b2", "name": "Box 2", "notify_targets": ["notify.b", "notify.a"], "persistent_notification": True},
+            ],
+            "spools": [],
+        },
+    }
+    entry, runtime = await setup_inventory(hass)
+    assert runtime.manager.alert_settings.targets == ["notify.a", "notify.b"]
+    assert runtime.manager.alert_settings.persistent is True

@@ -52,8 +52,6 @@ def build_snapshot(hass: HomeAssistant, runtime: FilamentRuntime) -> dict[str, A
                 "humidity_delay": box.humidity_delay,
                 "effective_humidity_max": threshold,
                 "effective_humidity_delay": delay,
-                "notify_targets": box.notify_targets,
-                "persistent_notification": box.persistent_notification,
                 "spool_limit": box.spool_limit,
                 "count": len(manager.spools_in(box.id)),
                 "alert_entity": entity_id("binary_sensor", f"{box.id}_humidity_alert"),
@@ -87,8 +85,6 @@ def build_snapshot(hass: HomeAssistant, runtime: FilamentRuntime) -> dict[str, A
                 "cloud_sync": spool.cloud_sync,
                 "cloud_match": match.name if match else None,
                 "low_stock_threshold": spool.low_stock_threshold,
-                "notify_targets": spool.notify_targets,
-                "persistent_notification": spool.persistent_notification,
                 "entity_id": entity_id("number", f"{spool.id}_remaining_weight"),
             }
         )
@@ -116,6 +112,10 @@ def build_snapshot(hass: HomeAssistant, runtime: FilamentRuntime) -> dict[str, A
         "slots": slot_entities(hass),
         "cloud": cloud,
         "print_notification": print_notification,
+        "alerts": {
+            "targets": manager.alert_settings.targets,
+            "persistent": manager.alert_settings.persistent,
+        },
     }
 
 

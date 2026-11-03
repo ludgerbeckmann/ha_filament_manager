@@ -192,14 +192,6 @@
         "low_stock_threshold": {
           "name": "Low stock warning below",
           "description": "In percent."
-        },
-        "notify_targets": {
-          "name": "Notify",
-          "description": "Notify entities for the low stock warning."
-        },
-        "persistent_notification": {
-          "name": "Persistent notification",
-          "description": "Show a persistent notification for the low stock warning."
         }
       }
     },
@@ -238,14 +230,6 @@
         "low_stock_threshold": {
           "name": "Low stock warning below",
           "description": "In percent; empty switches it off."
-        },
-        "notify_targets": {
-          "name": "Notify",
-          "description": ""
-        },
-        "persistent_notification": {
-          "name": "Persistent notification",
-          "description": ""
         },
         "ams_sync": {
           "name": "Follow the AMS remaining amount",
@@ -291,14 +275,6 @@
           "name": "Alert only after",
           "description": "Minutes; empty = automatic."
         },
-        "notify_targets": {
-          "name": "Notify",
-          "description": "Notify entities for the humidity alert."
-        },
-        "persistent_notification": {
-          "name": "Persistent notification",
-          "description": ""
-        },
         "spool_limit": {
           "name": "Maximum number of spools",
           "description": "Empty = unlimited."
@@ -327,14 +303,6 @@
         },
         "humidity_delay": {
           "name": "Alert only after",
-          "description": ""
-        },
-        "notify_targets": {
-          "name": "Notify",
-          "description": ""
-        },
-        "persistent_notification": {
-          "name": "Persistent notification",
           "description": ""
         },
         "spool_limit": {
@@ -391,6 +359,20 @@
       "name": "Send a test notification",
       "description": "Shows a sample Live Activity on the selected targets and removes it again after 30 seconds.",
       "fields": {}
+    },
+    "set_alert_notifications": {
+      "name": "Set up warning notifications",
+      "description": "Where humidity warnings (boxes) and low-stock warnings (spools) are sent - one setting for all.",
+      "fields": {
+        "notify_targets": {
+          "name": "Notify",
+          "description": "Notify entities."
+        },
+        "persistent_notification": {
+          "name": "Persistent notification",
+          "description": "Also show a persistent notification."
+        }
+      }
     }
   },
   "selector": {

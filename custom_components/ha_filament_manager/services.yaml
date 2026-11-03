@@ -138,16 +138,6 @@ add_spool:
           max: 100
           unit_of_measurement: "%"
           mode: box
-    notify_targets:
-      required: false
-      selector:
-        entity:
-          domain: notify
-          multiple: true
-    persistent_notification:
-      required: false
-      selector:
-        boolean:
 
 update_spool:
   fields:
@@ -192,16 +182,6 @@ update_spool:
           max: 100
           unit_of_measurement: "%"
           mode: box
-    notify_targets:
-      required: false
-      selector:
-        entity:
-          domain: notify
-          multiple: true
-    persistent_notification:
-      required: false
-      selector:
-        boolean:
     ams_sync:
       required: false
       selector:
@@ -251,16 +231,6 @@ add_box:
           max: 1440
           unit_of_measurement: min
           mode: box
-    notify_targets:
-      required: false
-      selector:
-        entity:
-          domain: notify
-          multiple: true
-    persistent_notification:
-      required: false
-      selector:
-        boolean:
     spool_limit:
       required: false
       selector:
@@ -303,16 +273,6 @@ update_box:
           max: 1440
           unit_of_measurement: min
           mode: box
-    notify_targets:
-      required: false
-      selector:
-        entity:
-          domain: notify
-          multiple: true
-    persistent_notification:
-      required: false
-      selector:
-        boolean:
     spool_limit:
       required: false
       selector:
@@ -366,3 +326,16 @@ set_print_notification:
         boolean:
 
 test_print_notification:
+
+set_alert_notifications:
+  fields:
+    notify_targets:
+      required: false
+      selector:
+        entity:
+          domain: notify
+          multiple: true
+    persistent_notification:
+      required: false
+      selector:
+        boolean:
