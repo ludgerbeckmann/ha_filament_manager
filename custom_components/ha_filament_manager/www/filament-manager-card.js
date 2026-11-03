@@ -26,7 +26,9 @@ const COLOR_SWATCHES = {
   grau: "#9e9e9e",
   silber: "#c0c0c0",
   rot: "#e53935",
-  blau: "#1e88e5",
+  blau: "#2a45c0", // royal blue
+  cyan: "#00bcd4",
+  magenta: "#d4189a",
   himmelblau: "#4fc3f7",
   gruen: "#43a047",
   "grün": "#43a047",
@@ -233,7 +235,7 @@ class FilamentManagerCard extends HTMLElement {
       ...spool,
       boxName: spool.box_id && boxes[spool.box_id] ? boxes[spool.box_id].name : null,
     }));
-    return { boxes, spools, slots: snapshot.slots || [], cloud: snapshot.cloud, print: snapshot.print_notification };
+    return { boxes, spools, slots: snapshot.slots || [], cloud: snapshot.cloud, print: snapshot.print_notification, alerts: snapshot.alerts };
   }
 
   /**
@@ -315,7 +317,7 @@ class FilamentManagerCard extends HTMLElement {
     const edit = this._editMode && this._canManage();
 
     return `
-      <div class="row ${indent ? "boxed" : ""}" data-entity="${esc(spool.entity_id)}">
+      <div class="row ${indent ? "boxed" : ""} ${edit ? "edit" : ""}" data-entity="${esc(spool.entity_id)}">
         ${this._swatch(spool)}
         <div class="info">
           <div class="name">${esc(spool.name)}</div>
@@ -340,26 +342,43 @@ class FilamentManagerCard extends HTMLElement {
       </div>`;
   }
 
-  _renderStockRow(spool) {
+  /** Identical sealed spools (same name, maker, material, colour, diameter, weight) are shown as one line. */
+  _stockGroups(stock) {
+    const groups = new Map();
+    for (const spool of stock) {
+      const key = [spool.name, spool.manufacturer, spool.material, spool.color, spool.diameter, spool.total_weight].join("|");
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(spool);
+    }
+    return [...groups.values()];
+  }
+
+  _renderStockRow(spools) {
     const edit = this._editMode && this._canManage();
-    const meta = [spool.material, spool.color, spool.manufacturer, `${spool.total_weight} g`].filter(Boolean).join(" · ");
+    const first = spools[0];
+    const last = spools[spools.length - 1];
+    const meta = [first.material, first.color, first.manufacturer, `${first.total_weight} g`].filter(Boolean).join(" · ");
+    const actions =
+      spools.length === 1
+        ? this._actions(
+            ["open", "mdi:package-variant", "Spule öffnen (in eine Box legen)", first.id],
+            ["edit-spool", "mdi:pencil-outline", "Spule bearbeiten", first.id],
+            ["delete-spool", "mdi:delete-outline", "Spule löschen", first.id]
+          )
+        : this._actions(
+            ["open", "mdi:package-variant", "Eine Rolle öffnen (in eine Box legen)", first.id],
+            ["add-sealed", "mdi:plus", "Eine weitere Rolle hinzufügen", first.id],
+            ["delete-spool", "mdi:minus", "Eine Rolle entfernen", last.id]
+          );
     return `
-      <div class="row boxed stock-row">
-        ${this._swatch(spool)}
+      <div class="row boxed stock-row ${edit ? "edit" : ""}">
+        ${this._swatch(first)}
         <div class="info">
-          <div class="name">${esc(spool.name)}</div>
+          <div class="name">${spools.length > 1 ? `${spools.length} × ` : ""}${esc(first.name)}</div>
           <div class="meta">${esc(meta)}</div>
         </div>
         <span class="sealed-badge">verschlossen</span>
-        ${
-          edit
-            ? this._actions(
-                ["open", "mdi:package-variant", "Spule öffnen (in eine Box legen)", spool.id],
-                ["edit-spool", "mdi:pencil-outline", "Spule bearbeiten", spool.id],
-                ["delete-spool", "mdi:delete-outline", "Spule löschen", spool.id]
-              )
-            : ""
-        }
+        ${edit ? actions : ""}
       </div>`;
   }
 
@@ -390,7 +409,7 @@ class FilamentManagerCard extends HTMLElement {
         : "";
 
     return `
-      <div class="box-header" data-toggle-box="${esc(group.key)}" title="${collapsed ? "Spulen anzeigen" : "Spulen ausblenden"}">
+      <div class="box-header ${edit ? "edit" : ""}" data-toggle-box="${esc(group.key)}" title="${collapsed ? "Spulen anzeigen" : "Spulen ausblenden"}">
         <ha-icon class="box-toggle" icon="${collapsed ? "mdi:chevron-right" : "mdi:chevron-down"}"></ha-icon>
         <ha-icon class="box-icon" icon="${group.icon}"></ha-icon>
         <span class="box-name">${esc(group.name)}${esc(limit)}</span>
@@ -413,7 +432,7 @@ class FilamentManagerCard extends HTMLElement {
         <span class="box-name">Vorrat (${stock.length})</span>
         ${dots}
       </div>
-      ${collapsed ? "" : stock.map((spool) => this._renderStockRow(spool)).join("")}
+      ${collapsed ? "" : this._stockGroups(stock).map((spools) => this._renderStockRow(spools)).join("")}
     `;
   }
 
@@ -453,7 +472,10 @@ class FilamentManagerCard extends HTMLElement {
     const buttons =
       this._editMode && this._canManage() && data
         ? `<div class="add-row"><button class="add-btn" data-action="add-spool">Spule anlegen</button><button class="add-btn" data-action="add-box">Box anlegen</button></div>
-           ${data.print ? `<div class="add-row"><button class="add-btn" data-action="print-notification">Druck-Benachrichtigung${data.print.enabled ? " (aktiv)" : ""}</button></div>` : ""}`
+           <div class="add-row">
+             ${data.alerts ? `<button class="add-btn" data-action="alerts">Warnungen</button>` : ""}
+             ${data.print ? `<button class="add-btn" data-action="print-notification">Druck-Benachrichtigung${data.print.enabled ? " (aktiv)" : ""}</button>` : ""}
+           </div>`
         : "";
 
     this.shadowRoot.innerHTML = `
@@ -462,12 +484,12 @@ class FilamentManagerCard extends HTMLElement {
         ha-card { padding: 16px; }
         /* Like the Bambu Lab cards: a black card with light text, whatever the theme. */
         .scheme-dark {
-          --ha-card-background: #101114;
-          --card-background-color: #101114;
+          --ha-card-background: #1c1c1c;
+          --card-background-color: #1c1c1c;
           --primary-text-color: #ffffff;
-          --secondary-text-color: #aeb2bb;
-          --divider-color: rgba(255, 255, 255, 0.16);
-          --secondary-background-color: rgba(255, 255, 255, 0.08);
+          --secondary-text-color: #a0a0a0;
+          --divider-color: rgba(255, 255, 255, 0.12);
+          --secondary-background-color: #2c2c2c;
           color-scheme: dark;
         }
         .scheme-light {
@@ -653,6 +675,21 @@ class FilamentManagerCard extends HTMLElement {
       
         .empty-group { color: var(--secondary-text-color); padding: 4px 0 8px 24px; font-size: 0.9em; }
         .sealed-badge { color: var(--secondary-text-color); font-size: 0.8em; border: 1px solid var(--divider-color); border-radius: 10px; padding: 1px 8px; flex: none; }
+        .rows { container-type: inline-size; }
+        /* Narrow cards (a phone): in the edit mode the progress bar and the actions get their own lines. */
+        @container (max-width: 560px) {
+          .row.edit { flex-wrap: wrap; row-gap: 8px; }
+          .row.edit .info { flex: 1 1 0; min-width: 60%; }
+          .row.edit .sealed-badge { order: 5; margin-right: auto; }
+          .row.edit .progress-col { order: 5; flex: 1 1 0; width: auto; min-width: 130px; }
+          .row.edit .actions { order: 6; flex: none; margin-left: auto; gap: 10px; }
+          .row.edit .actions ha-icon, .box-header.edit .actions ha-icon { --mdc-icon-size: 24px; }
+          .box-header.edit { flex-wrap: wrap; row-gap: 4px; }
+          .box-header.edit .box-swatches { display: none; }
+          .box-header.edit .actions { gap: 10px; margin-left: auto; }
+        }
+        /* Black and dark spools must stay visible on a dark card. */
+        .scheme-dark .swatch, .scheme-dark .mini-swatch { border-color: rgba(255, 255, 255, 0.55); }
         .add-row { display: flex; gap: 8px; }
         .add-row .add-btn { flex: 1 1 0; }
         .modal .checks { display: flex; flex-direction: column; gap: 2px; }
@@ -866,9 +903,28 @@ class FilamentManagerCard extends HTMLElement {
     const box = data.boxes[id];
 
     if (kind === "delete-spool" && spool) {
-      this._showModal("Spule löschen", `„${spool.name}“ wirklich löschen? Die Entitäten und der Verlauf der Spule gehen verloren.`, "", [
-        { label: "Löschen", busy: "Wird gelöscht", kind: "danger", run: () => this._call("remove_spool", { spool: id }) },
-      ]);
+      this._showModal(
+        spool.sealed ? "Rolle entfernen" : "Spule löschen",
+        spool.sealed
+          ? `Eine verschlossene Rolle „${spool.name}“ aus dem Vorrat entfernen?`
+          : `„${spool.name}“ wirklich löschen? Die Entitäten und der Verlauf der Spule gehen verloren.`,
+        "",
+        [
+          { label: spool.sealed ? "Entfernen" : "Löschen", busy: "Wird gelöscht", kind: "danger", run: () => this._call("remove_spool", { spool: id }) },
+        ]
+      );
+    } else if (kind === "add-sealed" && spool) {
+      // One more of the same sealed spool: no dialog, the plus is enough.
+      this._call("add_spool", {
+        name: spool.name,
+        material: spool.material,
+        color: spool.color,
+        manufacturer: spool.manufacturer,
+        diameter: spool.diameter,
+        total_weight: spool.total_weight,
+      }).catch((err) => this._showModal("Hinzufügen nicht möglich", this._errorText(err), "", []));
+    } else if (kind === "alerts" && data.alerts) {
+      this._dialogAlerts(data.alerts);
     } else if (kind === "delete-box" && box) {
       this._showModal("Box löschen", `Die leere Box „${box.name}“ wirklich löschen?`, "", [
         { label: "Löschen", busy: "Wird gelöscht", kind: "danger", run: () => this._call("remove_box", { box: id }) },
@@ -906,6 +962,32 @@ class FilamentManagerCard extends HTMLElement {
     } else if (kind === "print-notification" && data.print) {
       this._dialogPrintNotification(data.print);
     }
+  }
+
+  /** Where warnings go: one setting for all boxes (humidity) and spools (low stock). */
+  _dialogAlerts(alerts) {
+    this._showModal(
+      "Warnungen",
+      "Wohin Feuchtewarnungen (Boxen) und Bestandswarnungen (Spulen) gesendet werden – eine Einstellung für alle.",
+      `${
+        this._notifyTargets().length || alerts.targets.length
+          ? this._checkList("targets", "Benachrichtigen", this._notifyTargets(), alerts.targets)
+          : "<p>Keine Notify-Entitäten gefunden.</p>"
+      }
+       <label class="check"><input type="checkbox" id="persistent" ${alerts.persistent ? "checked" : ""} /> Dauerhafte Benachrichtigung in Home Assistant anzeigen</label>`,
+      [
+        {
+          label: "Speichern",
+          busy: "Wird gespeichert",
+          kind: "primary",
+          run: (m) =>
+            this._call("set_alert_notifications", {
+              notify_targets: this._checked(m, "targets"),
+              persistent_notification: m.querySelector("#persistent").checked,
+            }),
+        },
+      ]
+    );
   }
 
   /** The Live Activity for Bambu Lab prints: printer, targets (Companion apps), what to show. */
@@ -1107,8 +1189,6 @@ class FilamentManagerCard extends HTMLElement {
          .join("")}</select>
        <label for="total">Gesamtgewicht in g</label><input id="total" type="number" min="0" value="${esc(spool.total_weight)}" />
        <label for="low">Bestandswarnung unter … % (leer = aus)</label><input id="low" type="number" min="0" max="100" value="${esc(number(spool.low_stock_threshold))}" />
-       ${this._checkList("notify", "Benachrichtigen bei Bestandswarnung", this._notifyTargets(), spool.notify_targets)}
-       <label class="check"><input type="checkbox" id="persistent" ${spool.persistent_notification ? "checked" : ""} /> Dauerhafte Benachrichtigung anzeigen</label>
        ${ams}${cloud}`,
       [
         {
@@ -1129,8 +1209,6 @@ class FilamentManagerCard extends HTMLElement {
               manufacturer,
               diameter: value("diameter"),
               low_stock_threshold: value("low") === "" ? "" : Number(value("low")),
-              notify_targets: this._checked(m, "notify"),
-              persistent_notification: m.querySelector("#persistent").checked,
             };
             if (value("total")) request.total_weight = Number(value("total"));
             if (m.querySelector("#ams_sync")) request.ams_sync = m.querySelector("#ams_sync").checked;
@@ -1172,8 +1250,7 @@ class FilamentManagerCard extends HTMLElement {
        <input id="delay" type="number" min="0" value="${esc(number(box && box.humidity_delay))}" />
        <label for="limit">Maximale Spulenanzahl (leer = unbegrenzt)</label>
        <input id="limit" type="number" min="1" value="${esc(number(box && box.spool_limit))}" />
-       ${this._checkList("notify", "Benachrichtigen bei Feuchtewarnung", this._notifyTargets(), box ? box.notify_targets : [])}
-       <label class="check"><input type="checkbox" id="persistent" ${box && box.persistent_notification ? "checked" : ""} /> Dauerhafte Benachrichtigung anzeigen</label>`,
+       `,
       [
         {
           label: box ? "Speichern" : "Anlegen",
@@ -1188,8 +1265,6 @@ class FilamentManagerCard extends HTMLElement {
               humidity_max: value("max") === "" ? "" : Number(value("max")),
               humidity_delay: value("delay") === "" ? "" : Number(value("delay")),
               spool_limit: value("limit") === "" ? "" : Number(value("limit")),
-              notify_targets: this._checked(m, "notify"),
-              persistent_notification: m.querySelector("#persistent").checked,
             };
             return box ? this._call("update_box", { box: box.id, ...request }) : this._call("add_box", request);
           },

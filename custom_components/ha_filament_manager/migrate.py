@@ -103,14 +103,14 @@ async def async_migrate_legacy(hass: HomeAssistant) -> None:
             humidity_sensor=data.get(CONF_HUMIDITY_SENSOR) or None,
             humidity_max=data.get(CONF_HUMIDITY_MAX),
             humidity_delay=data.get(CONF_HUMIDITY_DELAY),
-            notify_targets=list(data.get(CONF_NOTIFY_TARGETS) or []),
-            persistent_notification=bool(data.get(CONF_PERSISTENT_NOTIFICATION)),
             spool_limit=data.get(CONF_SPOOL_LIMIT) or None,
         )
+        _collect_alerts(manager, data)
         for subentry in entry.subentries.values():
             if subentry.subentry_type != SUBENTRY_TYPE_SPOOL:
                 continue
             spool_data = subentry.data
+            _collect_alerts(manager, spool_data)
             total = spool_data.get(CONF_TOTAL_WEIGHT, DEFAULT_TOTAL_WEIGHT)
             remaining = _restored_remaining(hass, ent_reg, subentry.subentry_id)
             if remaining is None:
@@ -131,8 +131,6 @@ async def async_migrate_legacy(hass: HomeAssistant) -> None:
                 cloud_spool=str(spool_data[CONF_CLOUD_SPOOL]) if spool_data.get(CONF_CLOUD_SPOOL) else None,
                 cloud_sync=bool(spool_data.get(CONF_CLOUD_SYNC, True)),
                 low_stock_threshold=spool_data.get(CONF_LOW_STOCK_THRESHOLD),
-                notify_targets=list(spool_data.get(CONF_NOTIFY_TARGETS) or []),
-                persistent_notification=bool(spool_data.get(CONF_PERSISTENT_NOTIFICATION)),
             )
         for name, bucket in (("ams", ams_records), ("cloud", cloud_records)):
             store: Store[dict[str, Any]] = Store(hass, 1, f"{DOMAIN}.{name}_{entry.entry_id}")
@@ -159,6 +157,15 @@ async def async_migrate_legacy(hass: HomeAssistant) -> None:
         await hass.config_entries.async_remove(entry.entry_id)
     for store in old_stores:
         await store.async_remove()
+
+
+def _collect_alerts(manager: FilamentManager, data: Any) -> None:
+    """Targets that boxes and spools used to have each now are the common ones."""
+    alerts = manager.alert_settings
+    for target in data.get(CONF_NOTIFY_TARGETS) or []:
+        if target not in alerts.targets:
+            alerts.targets.append(target)
+    alerts.persistent = alerts.persistent or bool(data.get(CONF_PERSISTENT_NOTIFICATION))
 
 
 def _repoint_registries(hass: HomeAssistant, entry: Any, main: Any, spool_ids: set[str]) -> None:

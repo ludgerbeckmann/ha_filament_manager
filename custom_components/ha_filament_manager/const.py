@@ -77,6 +77,8 @@ COLOR_OPTIONS: Final[list[str]] = [
     "Braun",
     "Holzfarbe",
     "Beige",
+    "Cyan",
+    "Magenta",
     "Transparent",
     "Gold",
     "Sonstige",
@@ -97,6 +99,7 @@ MANUFACTURER_OPTIONS: Final[list[str]] = [
     "3DJake",
     "Das Filament",
     "Elegoo",
+    "Anycubic",
     "Sonstiges",
 ]
 
@@ -194,6 +197,7 @@ SERVICE_UPDATE_SPOOL: Final = "update_spool"
 SERVICE_OPEN_SPOOL: Final = "open_spool"
 SERVICE_SET_PRINT_NOTIFICATION: Final = "set_print_notification"
 SERVICE_TEST_PRINT_NOTIFICATION: Final = "test_print_notification"
+SERVICE_SET_ALERT_NOTIFICATIONS: Final = "set_alert_notifications"
 SERVICE_ADD_BOX: Final = "add_box"
 SERVICE_UPDATE_BOX: Final = "update_box"
 SERVICE_REMOVE_BOX: Final = "remove_box"
@@ -208,7 +212,7 @@ CARD_FILENAME: Final = "filament-manager-card.js"
 CARD_URL_PATH: Final = f"/{DOMAIN}_files/{CARD_FILENAME}"
 # Bump whenever the card's JS changes, to bust browser caching of the
 # static file (independent of the integration's own manifest version).
-CARD_VERSION: Final = "25"
+CARD_VERSION: Final = "26"
 
 
 SIGNAL_SNAPSHOT_DIRTY: Final = f"{DOMAIN}_snapshot_dirty"

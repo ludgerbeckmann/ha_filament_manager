@@ -130,13 +130,13 @@ async def test_boxes_and_spools_are_carried_over_with_their_entities(hass: HomeA
     manager = entry.runtime_data.manager
     box = manager.boxes[box_a_id]  # the box keeps its old id
     assert (box.name, box.humidity_sensor, box.humidity_max, box.spool_limit) == ("Box A", "sensor.h", 45, 5)
-    assert box.notify_targets == ["notify.me"]
+    assert entry.runtime_data.manager.alert_settings.targets == ["notify.me"]  # now one setting for all
+    assert entry.runtime_data.manager.alert_settings.persistent is True
     assert manager.boxes[box_b_id].name == "Box B"
     one, two, three = (manager.spools[sid] for sid in ("spool1", "spool2", "spool3"))
     assert (one.box_id, three.box_id) == (box_a_id, box_b_id)
     assert (one.name, one.material, one.manufacturer, one.total_weight) == ("Spool One", "PLA", "Elegoo", 1000)
     assert (one.ams_slot, one.cloud_spool, one.low_stock_threshold) == (SLOT, "11", 20)
-    assert one.persistent_notification and one.notify_targets == ["notify.me"]
     assert two.material == "Nylon"
 
     # The remaining weight comes from the restored state, else from the initial value.

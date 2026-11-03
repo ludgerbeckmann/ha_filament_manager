@@ -192,14 +192,6 @@
         "low_stock_threshold": {
           "name": "Bestandswarnung unter",
           "description": "In Prozent."
-        },
-        "notify_targets": {
-          "name": "Benachrichtigen",
-          "description": "Notify-Entitäten für die Bestandswarnung."
-        },
-        "persistent_notification": {
-          "name": "Dauerhafte Benachrichtigung",
-          "description": "Dauerhafte Benachrichtigung für die Bestandswarnung anzeigen."
         }
       }
     },
@@ -238,14 +230,6 @@
         "low_stock_threshold": {
           "name": "Bestandswarnung unter",
           "description": "In Prozent; leer schaltet sie ab."
-        },
-        "notify_targets": {
-          "name": "Benachrichtigen",
-          "description": ""
-        },
-        "persistent_notification": {
-          "name": "Dauerhafte Benachrichtigung",
-          "description": ""
         },
         "ams_sync": {
           "name": "Restmenge aus dem AMS übernehmen",
@@ -291,14 +275,6 @@
           "name": "Warnen erst nach",
           "description": "Minuten; leer = automatisch."
         },
-        "notify_targets": {
-          "name": "Benachrichtigen",
-          "description": "Notify-Entitäten für die Feuchtewarnung."
-        },
-        "persistent_notification": {
-          "name": "Dauerhafte Benachrichtigung",
-          "description": ""
-        },
         "spool_limit": {
           "name": "Maximale Spulenanzahl",
           "description": "Leer = unbegrenzt."
@@ -327,14 +303,6 @@
         },
         "humidity_delay": {
           "name": "Warnen erst nach",
-          "description": ""
-        },
-        "notify_targets": {
-          "name": "Benachrichtigen",
-          "description": ""
-        },
-        "persistent_notification": {
-          "name": "Dauerhafte Benachrichtigung",
           "description": ""
         },
         "spool_limit": {
@@ -391,6 +359,20 @@
       "name": "Testbenachrichtigung senden",
       "description": "Zeigt eine Beispiel-Live-Activity auf den gewählten Zielen und entfernt sie nach 30 Sekunden wieder.",
       "fields": {}
+    },
+    "set_alert_notifications": {
+      "name": "Warn-Benachrichtigungen einrichten",
+      "description": "Wohin Feuchtewarnungen (Boxen) und Bestandswarnungen (Spulen) gesendet werden – eine Einstellung für alle.",
+      "fields": {
+        "notify_targets": {
+          "name": "Benachrichtigen",
+          "description": "Notify-Entitäten."
+        },
+        "persistent_notification": {
+          "name": "Dauerhafte Benachrichtigung",
+          "description": "Zusätzlich eine dauerhafte Benachrichtigung anzeigen."
+        }
+      }
     }
   },
   "selector": {

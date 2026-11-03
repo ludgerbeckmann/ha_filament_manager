@@ -16,7 +16,7 @@ schlanke, native Home-Assistant-Integration ohne externen Server.
   in eine andere Box verschieben, in den Drucker laden, löschen.
 - Eine **Box** ist eine Filamentbox oder ein Regal. Sie kann einen
   **Luftfeuchtigkeitssensor** (z. B. ein Hygrometer in der Trockenbox), eine
-  maximale Spulenanzahl und Benachrichtigungen haben.
+  maximale Spulenanzahl haben.
 - Der **Vorrat** nimmt **verschlossene Rollen** auf (jede einzeln erfasst).
   Mit „Spule öffnen" wandert eine Rolle in eine Box und bekommt ihre
   Entitäten.
@@ -93,10 +93,14 @@ Das Stift-Symbol rechts im Kartenkopf schaltet den **Bearbeiten-Modus** ein
   zuordnen – ein Slot hat nur eine Spule, die bisherige wird herausgenommen),
   **in eine andere Box verschieben**, **bearbeiten** und **löschen**,
 - pro Box: **bearbeiten** (Name, Luftfeuchtigkeitssensor, Grenzwerte, maximale
-  Spulenanzahl, Benachrichtigungen) und – wenn sie leer ist – **löschen**,
+  Spulenanzahl) und – wenn sie leer ist – **löschen**,
 - pro verschlossener Spule im Vorrat: **öffnen** (in eine Box legen),
-  bearbeiten und löschen,
-- die Knöpfe **Spule anlegen** und **Box anlegen**. Beim Anlegen einer Spule
+  bearbeiten und löschen. **Gleiche Rollen** (Name, Hersteller, Material,
+  Farbe, Durchmesser und Gewicht stimmen überein) stehen als eine Zeile
+  `3 × …` da; mit **+** kommt eine weitere Rolle dazu, mit **−** wird eine
+  entfernt, **öffnen** nimmt eine heraus,
+- die Knöpfe **Spule anlegen**, **Box anlegen**, **Warnungen** und **Druck-Benachrichtigung** (siehe unten).
+  Beim **Anlegen** Beim Anlegen einer Spule
   wählst du die Ablage: eine Box oder **Vorrat (verschlossen)**. Material,
   Farbe und Hersteller (Pflicht) sind Dropdowns wie gewohnt, auf Wunsch mit
   „Eigene Eingabe …"; Name, Gesamtgewicht und Restgewicht sind mit den
@@ -235,17 +239,21 @@ hat er immer Vorrang; durch Leeren des Feldes kehrst du zur Automatik zurück.
 
 Sowohl die Luftfeuchtigkeitswarnung (pro Box) als auch die Bestandswarnung
 (pro Spule) können automatisch benachrichtigen, sobald der jeweilige
-`binary_sensor` von "aus" auf "an" wechselt (keine eigene Automation nötig):
+`binary_sensor` von "aus" auf "an" wechselt (keine eigene Automation nötig).
+Wohin, legst du **einmal für alles** fest: Karte → Stift-Symbol →
+**Warnungen** (oder Dienst `set_alert_notifications`):
 
-- **Push-Benachrichtigung**: ein oder mehrere Notify-Ziele auswählbar (z. B.
-  `notify.mobile_app_dein_handy`).
+- **Push-Benachrichtigung**: ein oder mehrere Notify-Entitäten auswählbar
+  (z. B. `notify.mobile_app_dein_handy`).
 - **Dauerhafte Benachrichtigung**: als Karte im Dashboard
   (*Einstellungen → Benachrichtigungen*), wird automatisch wieder entfernt,
   sobald der Warnzustand endet (z. B. Luftfeuchtigkeit wieder unter dem
   Grenzwert, oder Spule aufgefüllt).
 
-Beide Kanäle sind optional und unabhängig voneinander zuschaltbar, im
-Bearbeiten-Dialog der Box bzw. der Spule in der Karte.
+Beide Kanäle sind optional und unabhängig voneinander zuschaltbar. Welche Box
+oder Spule überhaupt warnt, bestimmen ihr Feuchtesensor bzw. ihre
+Bestandswarnung. (Bis Version 1.2 hatte jede Box und Spule eigene Ziele; sie
+werden beim Update zu den gemeinsamen zusammengeführt.)
 
 ## Druck-Benachrichtigung (Live Activity)
 

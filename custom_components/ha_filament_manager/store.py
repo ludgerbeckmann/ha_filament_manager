@@ -55,8 +55,6 @@ class Box:
     humidity_sensor: str | None = None
     humidity_max: float | None = None  # None = automatic, from the materials inside
     humidity_delay: float | None = None  # minutes; None = automatic
-    notify_targets: list[str] = field(default_factory=list)
-    persistent_notification: bool = False
     spool_limit: int | None = None  # None = any number of spools
 
     @classmethod
@@ -84,11 +82,22 @@ class Spool:
     cloud_spool: str | None = None  # a spool of the Bambu cloud library (None = by RFID)
     cloud_sync: bool = True
     low_stock_threshold: float | None = None
-    notify_targets: list[str] = field(default_factory=list)
-    persistent_notification: bool = False
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> Spool:
+        known = {f.name for f in fields(cls)}
+        return cls(**{key: value for key, value in raw.items() if key in known})
+
+
+@dataclass
+class AlertSettings:
+    """Where warnings (humidity of a box, low stock of a spool) are sent - for all boxes and spools."""
+
+    targets: list[str] = field(default_factory=list)  # notify entities
+    persistent: bool = False  # also a persistent notification in Home Assistant
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> AlertSettings:
         known = {f.name for f in fields(cls)}
         return cls(**{key: value for key, value in raw.items() if key in known})
 
@@ -125,6 +134,7 @@ class FilamentManager:
         self.boxes: dict[str, Box] = {}
         self.spools: dict[str, Spool] = {}
         self.print_settings = PrintSettings()
+        self.alert_settings = AlertSettings()
         self._listeners: list[Callable[[bool], None]] = []
 
     # ------------------------------------------------------------ persistence
@@ -135,12 +145,22 @@ class FilamentManager:
         self.boxes = {box["id"]: Box.from_dict(box) for box in raw.get("boxes", [])}
         self.spools = {spool["id"]: Spool.from_dict(spool) for spool in raw.get("spools", [])}
         self.print_settings = PrintSettings.from_dict(raw.get("print_notification", {}))
+        if "alerts" in raw:
+            self.alert_settings = AlertSettings.from_dict(raw["alerts"])
+        else:
+            # Before 1.3 every box and spool had its own targets: they become the common ones.
+            owners = [*raw.get("boxes", []), *raw.get("spools", [])]
+            self.alert_settings = AlertSettings(
+                targets=list(dict.fromkeys(t for owner in owners for t in owner.get("notify_targets") or [])),
+                persistent=any(owner.get("persistent_notification") for owner in owners),
+            )
 
     def _data_to_save(self) -> dict[str, Any]:
         return {
             "boxes": [asdict(box) for box in self.boxes.values()],
             "spools": [asdict(spool) for spool in self.spools.values()],
             "print_notification": asdict(self.print_settings),
+            "alerts": asdict(self.alert_settings),
         }
 
     @callback
@@ -367,7 +387,17 @@ class FilamentManager:
         del self.spools[spool_id]
         self._changed(structure=True, spool_id=spool_id, box_id=spool.box_id)
 
-    # ------------------------------------------------------ print notification
+    # ------------------------------------------------------ notifications
+
+    @callback
+    def set_alert_settings(self, *, targets: list[str] | None = None, persistent: bool | None = None) -> AlertSettings:
+        """Change where warnings are sent."""
+        if targets is not None:
+            self.alert_settings.targets = list(dict.fromkeys(targets))
+        if persistent is not None:
+            self.alert_settings.persistent = bool(persistent)
+        self._changed(structure=False)
+        return self.alert_settings
 
     @callback
     def set_print_settings(self, **changes: Any) -> PrintSettings:
