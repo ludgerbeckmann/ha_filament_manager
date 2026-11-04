@@ -192,6 +192,10 @@
         "low_stock_threshold": {
           "name": "Bestandswarnung unter",
           "description": "In Prozent."
+        },
+        "variant": {
+          "name": "Variante",
+          "description": "z. B. Matte, Silk, CF. Optional; leer entfernt sie."
         }
       }
     },
@@ -242,6 +246,10 @@
         "cloud_sync": {
           "name": "Restmenge aus der Cloud übernehmen",
           "description": ""
+        },
+        "variant": {
+          "name": "Variante",
+          "description": "z. B. Matte, Silk, CF. Optional; leer entfernt sie."
         }
       }
     },

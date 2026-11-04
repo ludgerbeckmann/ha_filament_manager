@@ -19,12 +19,14 @@ from .const import (
     CONF_COLOR,
     CONF_MANUFACTURER,
     CONF_MATERIAL,
+    CONF_VARIANT,
     DEFAULT_MATERIAL,
     DIAMETER_OPTIONS,
     DOMAIN,
     MANUFACTURER_OPTIONS,
     MATERIAL_OPTIONS,
     SIGNAL_SNAPSHOT_DIRTY,
+    VARIANT_OPTIONS,
     suggested_total_weight,
 )
 from .choices import sorted_options, suggest_name
@@ -68,6 +70,7 @@ def build_snapshot(hass: HomeAssistant, runtime: FilamentRuntime) -> dict[str, A
                 "id": spool.id,
                 "name": spool.name,
                 "material": spool.material,
+                "variant": spool.variant,
                 "color": spool.color,
                 "manufacturer": spool.manufacturer,
                 "diameter": spool.diameter,
@@ -160,6 +163,7 @@ def websocket_options(hass: HomeAssistant, connection: websocket_api.ActiveConne
         msg["id"],
         {
             "materials": sorted_options(MATERIAL_OPTIONS),
+            "variants": sorted_options(VARIANT_OPTIONS),
             "colors": sorted_options(COLOR_OPTIONS),
             "manufacturers": sorted_options(MANUFACTURER_OPTIONS),
             "diameters": [option["value"] for option in DIAMETER_OPTIONS],
@@ -173,8 +177,13 @@ def websocket_options(hass: HomeAssistant, connection: websocket_api.ActiveConne
     )
 
 
-def _suggestion(material: str, color: str, manufacturer: str) -> dict[str, Any]:
-    data = {CONF_MATERIAL: material.strip(), CONF_COLOR: color.strip(), CONF_MANUFACTURER: manufacturer.strip()}
+def _suggestion(material: str, color: str, manufacturer: str, variant: str = "") -> dict[str, Any]:
+    data = {
+        CONF_MATERIAL: material.strip(),
+        CONF_VARIANT: variant.strip(),
+        CONF_COLOR: color.strip(),
+        CONF_MANUFACTURER: manufacturer.strip(),
+    }
     return {
         "name": suggest_name(data),
         "total_weight": suggested_total_weight(data[CONF_MANUFACTURER], data[CONF_MATERIAL]),
@@ -187,9 +196,10 @@ def _suggestion(material: str, color: str, manufacturer: str) -> dict[str, Any]:
         vol.Required(CONF_MATERIAL): cv.string,
         vol.Required(CONF_COLOR): cv.string,
         vol.Required(CONF_MANUFACTURER): cv.string,
+        vol.Optional(CONF_VARIANT, default=""): cv.string,
     }
 )
 @callback
 def websocket_suggest(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """The name and total weight suggested for these choices."""
-    connection.send_result(msg["id"], _suggestion(msg[CONF_MATERIAL], msg[CONF_COLOR], msg[CONF_MANUFACTURER]))
+    connection.send_result(msg["id"], _suggestion(msg[CONF_MATERIAL], msg[CONF_COLOR], msg[CONF_MANUFACTURER], msg[CONF_VARIANT]))

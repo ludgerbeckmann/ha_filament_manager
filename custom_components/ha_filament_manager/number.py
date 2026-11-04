@@ -124,6 +124,7 @@ class FilamentRemainingWeightNumber(NumberEntity):
         attributes: dict[str, Any] = {
             "spool_id": spool.id,
             "material": spool.material,
+            "variant": spool.variant,
             "color": spool.color,
             "manufacturer": spool.manufacturer,
             "diameter_mm": spool.diameter,

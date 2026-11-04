@@ -7,6 +7,7 @@ DOMAIN: Final = "ha_filament_manager"
 
 CONF_NAME: Final = "name"
 CONF_MATERIAL: Final = "material"
+CONF_VARIANT: Final = "variant"
 CONF_COLOR: Final = "color"
 CONF_MANUFACTURER: Final = "manufacturer"
 CONF_DIAMETER: Final = "diameter"
@@ -46,6 +47,27 @@ DEFAULT_HUMIDITY_MAX: Final = 40
 DEFAULT_HUMIDITY_DELAY: Final = 30
 DEFAULT_MATERIAL: Final = "PETG"
 DEFAULT_DIAMETER: Final = "1.75"
+
+# The kind of a material: PLA Matte, PETG-CF, ... The base material (PLA, PETG) decides
+# humidity limits and weights; the variant is only a label.
+VARIANT_OPTIONS: Final[list[str]] = [
+    "Basic",
+    "Matte",
+    "Silk",
+    "Plus (+)",
+    "Pro",
+    "HF (High Flow)",
+    "Tough",
+    "CF (Kohlefaser)",
+    "GF (Glasfaser)",
+    "Galaxy",
+    "Sparkle",
+    "Marble",
+    "Metallic",
+    "Glow",
+    "Wood",
+    "Sonstige",
+]
 
 MATERIAL_OPTIONS: Final[list[str]] = [
     "PLA",
@@ -100,6 +122,7 @@ MANUFACTURER_OPTIONS: Final[list[str]] = [
     "Das Filament",
     "Elegoo",
     "Anycubic",
+    "BIQU",
     "Sonstiges",
 ]
 
@@ -212,7 +235,7 @@ CARD_FILENAME: Final = "filament-manager-card.js"
 CARD_URL_PATH: Final = f"/{DOMAIN}_files/{CARD_FILENAME}"
 # Bump whenever the card's JS changes, to bust browser caching of the
 # static file (independent of the integration's own manifest version).
-CARD_VERSION: Final = "26"
+CARD_VERSION: Final = "27"
 
 
 SIGNAL_SNAPSHOT_DIRTY: Final = f"{DOMAIN}_snapshot_dirty"

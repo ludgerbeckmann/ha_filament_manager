@@ -20,7 +20,7 @@ schlanke, native Home-Assistant-Integration ohne externen Server.
 - Der **Vorrat** nimmt **verschlossene Rollen** auf (jede einzeln erfasst).
   Mit „Spule öffnen" wandert eine Rolle in eine Box und bekommt ihre
   Entitäten.
-- Jede Spule hat **Name, Material, Farbe, Hersteller, Durchmesser** sowie
+- Jede Spule hat **Name, Material, Variante, Farbe, Hersteller, Durchmesser** sowie
   **Gesamt- und Restgewicht**. Die Restmenge ist direkt anpassbar (editierbare
   `number`-Entität) oder per Dienst; Material, Farbe, Füllstand u. a. stehen
   als Attribute daran.
@@ -71,6 +71,16 @@ stehen jetzt als Attribute (`remaining_percentage`, `material`, `color`, …) an
 der Restmengen-Entität. Wer sie in Karten oder Automationen nutzt, stellt auf
 die Attribute um.
 
+### Material und Variante
+
+Das **Material** ist die Grundsorte (PLA, PETG, ABS, ASA, TPU, PC, Nylon, PVA,
+HIPS, Sonstiges), die **Variante** die Ausprägung: z. B. Matte, Silk, Plus,
+Pro, HF, Tough, CF (Kohlefaser), GF (Glasfaser), Galaxy, Sparkle, Marble,
+Metallic, Glow, Wood – oder ein eigener Eintrag. So bleibt „PETG-CF“ ein PETG:
+Feuchtegrenzwerte, Gewichtsvorschläge und die Gruppierung nach Material richten
+sich nach der Grundsorte, die Variante steht im Namen (`Elegoo PLA Matte
+Schwarz`), in der Zeile (`PLA Matte · Schwarz`) und als Attribut `variant`.
+
 ## Entitäten
 
 | Entität | Beschreibung |
@@ -102,9 +112,12 @@ Das Stift-Symbol rechts im Kartenkopf schaltet den **Bearbeiten-Modus** ein
 - die Knöpfe **Spule anlegen**, **Box anlegen**, **Warnungen** und **Druck-Benachrichtigung** (siehe unten).
   Beim **Anlegen** Beim Anlegen einer Spule
   wählst du die Ablage: eine Box oder **Vorrat (verschlossen)**. Material,
-  Farbe und Hersteller (Pflicht) sind Dropdowns wie gewohnt, auf Wunsch mit
+  Variante (optional), Farbe und Hersteller (Pflicht) sind Dropdowns wie gewohnt, auf Wunsch mit
   „Eigene Eingabe …"; Name, Gesamtgewicht und Restgewicht sind mit den
-  Vorschlägen vorbelegt und folgen den Auswahlen, bis du sie änderst. Volle
+  Vorschlägen vorbelegt und folgen den Auswahlen, bis du sie änderst. Beim
+  **Bearbeiten** einer Spule folgt der Name Änderungen von Hersteller,
+  Material, Variante und Farbe, solange er noch dem Vorschlag entspricht (ein
+  eigener Name bleibt unangetastet). Volle
   Boxen werden nicht zur Auswahl angeboten.
 
 ## Dienste

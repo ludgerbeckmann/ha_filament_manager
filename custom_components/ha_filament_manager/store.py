@@ -71,6 +71,7 @@ class Spool:
     name: str
     material: str
     color: str
+    variant: str = ""  # PLA Matte, PETG-CF, ... (optional)
     manufacturer: str = ""
     diameter: str = "1.75"
     total_weight: float = 1000
@@ -338,7 +339,7 @@ class FilamentManager:
             changes.pop("ams_slot", None)
         total = changes.get("total_weight", spool.total_weight)
         for key, value in changes.items():
-            setattr(spool, key, value.strip() if key in ("name", "material", "color") else value)
+            setattr(spool, key, value.strip() if key in ("name", "material", "variant", "color", "manufacturer") else value)
         spool.remaining_weight = min(spool.remaining_weight, total)
         self._changed(structure=True, spool_id=spool_id, box_id=spool.box_id)
         return spool
