@@ -77,7 +77,7 @@ def async_sync_devices(hass: HomeAssistant, entry: ConfigEntry, manager: Filamen
             identifiers={(DOMAIN, spool.id)},
             name=spool.name,
             manufacturer=spool.manufacturer or "Filament Manager",
-            model=spool.material,
+            model=f"{spool.material} {spool.variant}".strip(),
             **link,
         )
 

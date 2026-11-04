@@ -283,6 +283,11 @@ class FilamentManagerCard extends HTMLElement {
 
   // ---------------------------------------------------------------- rendering
 
+  /** "PLA Matte", "PETG CF (Kohlefaser)": the material with its variant, if any. */
+  _materialLabel(spool) {
+    return [spool.material, spool.variant].filter(Boolean).join(" ");
+  }
+
   _swatch(spool, size = "") {
     const color = swatchFor(spool.color);
     const transparent = color === "transparent";
@@ -313,7 +318,7 @@ class FilamentManagerCard extends HTMLElement {
     const printer = spool.in_printer
       ? `<ha-icon class="printer-badge" icon="mdi:printer-3d" title="Im Drucker${spool.ams_slot ? ` (${esc(spool.ams_slot)})` : ""}"></ha-icon>`
       : "";
-    const meta = [spool.material, spool.color, showBox ? spool.boxName : null].filter(Boolean).join(" · ") || "&nbsp;";
+    const meta = [this._materialLabel(spool), spool.color, showBox ? spool.boxName : null].filter(Boolean).join(" · ") || "&nbsp;";
     const edit = this._editMode && this._canManage();
 
     return `
@@ -346,7 +351,7 @@ class FilamentManagerCard extends HTMLElement {
   _stockGroups(stock) {
     const groups = new Map();
     for (const spool of stock) {
-      const key = [spool.name, spool.manufacturer, spool.material, spool.color, spool.diameter, spool.total_weight].join("|");
+      const key = [spool.name, spool.manufacturer, spool.material, spool.variant, spool.color, spool.diameter, spool.total_weight].join("|");
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(spool);
     }
@@ -357,7 +362,7 @@ class FilamentManagerCard extends HTMLElement {
     const edit = this._editMode && this._canManage();
     const first = spools[0];
     const last = spools[spools.length - 1];
-    const meta = [first.material, first.color, first.manufacturer, `${first.total_weight} g`].filter(Boolean).join(" · ");
+    const meta = [this._materialLabel(first), first.color, first.manufacturer, `${first.total_weight} g`].filter(Boolean).join(" · ");
     const actions =
       spools.length === 1
         ? this._actions(
@@ -424,7 +429,9 @@ class FilamentManagerCard extends HTMLElement {
 
   _renderStock(stock) {
     const collapsed = this._isCollapsed("stock");
-    const dots = collapsed ? `<div class="box-swatches">${stock.map((spool) => this._swatch(spool, "mini-")).join("")}</div>` : "";
+    // One dot per colour, however many spools there are of it.
+    const colours = [...new Map(stock.map((spool) => [(spool.color || "").toLowerCase(), spool])).values()];
+    const dots = collapsed ? `<div class="box-swatches">${colours.map((spool) => this._swatch(spool, "mini-")).join("")}</div>` : "";
     return `
       <div class="box-header" data-toggle-box="stock" title="${collapsed ? "Vorrat anzeigen" : "Vorrat ausblenden"}">
         <ha-icon class="box-toggle" icon="${collapsed ? "mdi:chevron-right" : "mdi:chevron-down"}"></ha-icon>
@@ -834,9 +841,10 @@ class FilamentManagerCard extends HTMLElement {
   }
 
   /** A dropdown with the known choices plus "own value", which reveals a text field. */
-  _choiceField(id, label, items, { selected = "" } = {}) {
-    const known = items.includes(selected);
+  _choiceField(id, label, items, { selected = "", optional = false } = {}) {
+    const known = items.includes(selected) || (optional && !selected);
     const options = [
+      ...(optional ? [`<option value="" ${selected ? "" : "selected"}>–</option>`] : []),
       ...items.map((item) => `<option value="${esc(item)}" ${item === selected ? "selected" : ""}>${esc(item)}</option>`),
       `<option value="__custom__" ${selected && !known ? "selected" : ""}>Eigene Eingabe …</option>`,
     ].join("");
@@ -1089,6 +1097,7 @@ class FilamentManagerCard extends HTMLElement {
       `<label for="box">Ablage</label>
        <select id="box">${boxes}<option value="">Vorrat (verschlossen)</option></select>
        ${this._choiceField("material", "Material", choices.materials, { selected: choices.default_material })}
+       ${this._choiceField("variant", "Variante, z. B. Matte, CF (optional)", choices.variants || [], { optional: true })}
        ${this._choiceField("color", "Farbe", choices.colors, { selected: choices.default_color })}
        ${this._choiceField("manufacturer", "Hersteller", choices.manufacturers, { selected: choices.manufacturers[0] || "" })}
        <label for="diameter">Durchmesser</label><select id="diameter">${(choices.diameters || ["1.75"]).map((d) => `<option value="${esc(d)}">${esc(d)} mm</option>`).join("")}</select>
@@ -1107,6 +1116,8 @@ class FilamentManagerCard extends HTMLElement {
             const manufacturer = this._choiceValue(m, "manufacturer");
             if (!material || !color || !manufacturer) throw new Error("Material, Farbe und Hersteller angeben.");
             const request = { material, color, manufacturer, diameter: value("diameter") };
+            const variant = this._choiceValue(m, "variant");
+            if (variant) request.variant = variant;
             if (value("box")) request.box = value("box");
             if (value("name")) request.name = value("name");
             if (value("total")) request.total_weight = Number(value("total"));
@@ -1128,9 +1139,9 @@ class FilamentManagerCard extends HTMLElement {
    * Name, total and remaining weight are pre-filled with what the setup
    * suggests and follow the choices above - until they are edited by hand.
    */
-  _wireSuggestions(modal) {
+  _wireSuggestions(modal, { weights = true } = {}) {
     const field = (id) => modal.querySelector(`#${id}`);
-    ["name", "total", "remaining"].forEach((id) => {
+    ["name", ...(weights ? ["total", "remaining"] : [])].forEach((id) => {
       field(id).addEventListener("input", () => {
         field(id).dataset.touched = "1";
         // The remaining weight follows the total until it is set by hand.
@@ -1141,23 +1152,24 @@ class FilamentManagerCard extends HTMLElement {
     const refresh = async () => {
       const request = ++latest;
       const material = this._choiceValue(modal, "material");
+      const variant = this._choiceValue(modal, "variant");
       const color = this._choiceValue(modal, "color");
       const manufacturer = this._choiceValue(modal, "manufacturer");
       if (!material || !color || !manufacturer) return;
       let suggestion;
       try {
-        suggestion = await this._hass.callWS({ type: `${PLATFORM}/suggest`, material, color, manufacturer });
+        suggestion = await this._hass.callWS({ type: `${PLATFORM}/suggest`, material, variant, color, manufacturer });
       } catch (err) {
         return;
       }
       if (request !== latest) return; // a newer choice is already on its way
       if (!field("name").dataset.touched) field("name").value = suggestion.name;
-      if (!field("total").dataset.touched) {
+      if (weights && !field("total").dataset.touched) {
         field("total").value = suggestion.total_weight;
         if (!field("remaining").dataset.touched) field("remaining").value = suggestion.total_weight;
       }
     };
-    ["material", "color", "manufacturer"].forEach((id) => {
+    ["material", "variant", "color", "manufacturer"].forEach((id) => {
       field(id).addEventListener("change", refresh);
       field(`${id}-custom`).addEventListener("input", refresh);
     });
@@ -1177,11 +1189,26 @@ class FilamentManagerCard extends HTMLElement {
     const ams = spool.ams_slot
       ? `<label class="check"><input type="checkbox" id="ams_sync" ${spool.ams_sync ? "checked" : ""} /> Restmenge aus dem AMS übernehmen (nur Spulen mit RFID)</label>`
       : "";
+    // The name follows the choices as long as it still is the suggested one (not an individual name).
+    let followsSuggestion = false;
+    try {
+      const current = await this._hass.callWS({
+        type: `${PLATFORM}/suggest`,
+        material: spool.material,
+        variant: spool.variant || "",
+        color: spool.color,
+        manufacturer: spool.manufacturer,
+      });
+      followsSuggestion = current.name === spool.name;
+    } catch (err) {
+      /* then the name stays as it is */
+    }
     const modal = this._showModal(
       "Spule bearbeiten",
       "",
       `<label for="name">Name</label><input id="name" autocomplete="off" value="${esc(spool.name)}" />
        ${this._choiceField("material", "Material", choices.materials, { selected: spool.material })}
+       ${this._choiceField("variant", "Variante, z. B. Matte, CF (optional)", choices.variants || [], { optional: true, selected: spool.variant || "" })}
        ${this._choiceField("color", "Farbe", choices.colors, { selected: spool.color })}
        ${this._choiceField("manufacturer", "Hersteller", choices.manufacturers, { selected: spool.manufacturer })}
        <label for="diameter">Durchmesser</label><select id="diameter">${(choices.diameters || ["1.75"])
@@ -1207,6 +1234,7 @@ class FilamentManagerCard extends HTMLElement {
               material,
               color,
               manufacturer,
+              variant: this._choiceValue(m, "variant"),
               diameter: value("diameter"),
               low_stock_threshold: value("low") === "" ? "" : Number(value("low")),
             };
@@ -1222,6 +1250,8 @@ class FilamentManagerCard extends HTMLElement {
       ]
     );
     this._wireChoices(modal);
+    this._wireSuggestions(modal, { weights: false });
+    if (!followsSuggestion) modal.querySelector("#name").dataset.touched = "1"; // an individual name stays
   }
 
   _dialogBox(box, data) {

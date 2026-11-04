@@ -30,6 +30,7 @@ from .const import (
     CONF_PERSISTENT_NOTIFICATION,
     CONF_SPOOL_LIMIT,
     CONF_TOTAL_WEIGHT,
+    CONF_VARIANT,
     DEFAULT_DIAMETER,
     DOMAIN,
     SERVICE_ADD_BOX,
@@ -75,6 +76,7 @@ ADD_SPOOL_SCHEMA = vol.Schema(
         # Without a box the spool is sealed and goes into the stock.
         vol.Optional("box"): cv.string,
         vol.Required(CONF_MATERIAL): _NAME,
+        vol.Optional(CONF_VARIANT, default=""): cv.string,
         vol.Required(CONF_COLOR): _NAME,
         vol.Required(CONF_MANUFACTURER): _NAME,
         vol.Optional(CONF_DIAMETER, default=DEFAULT_DIAMETER): cv.string,
@@ -89,6 +91,7 @@ UPDATE_SPOOL_SCHEMA = vol.Schema(
         vol.Required("spool"): cv.string,
         vol.Optional("name"): _NAME,
         vol.Optional(CONF_MATERIAL): _NAME,
+        vol.Optional(CONF_VARIANT): cv.string,
         vol.Optional(CONF_COLOR): _NAME,
         vol.Optional(CONF_MANUFACTURER): _NAME,
         vol.Optional(CONF_DIAMETER): cv.string,
@@ -186,11 +189,16 @@ def async_register_services(hass: HomeAssistant) -> None:
         manufacturer, material = data[CONF_MANUFACTURER].strip(), data[CONF_MATERIAL].strip()
         total = data.get(CONF_TOTAL_WEIGHT) or suggested_total_weight(manufacturer, material)
         name = (data.get("name") or "").strip() or suggest_name(
-            {CONF_MANUFACTURER: manufacturer, CONF_MATERIAL: material, CONF_COLOR: data[CONF_COLOR]}
+            {
+                CONF_MANUFACTURER: manufacturer,
+                CONF_MATERIAL: material,
+                CONF_VARIANT: data[CONF_VARIANT],
+                CONF_COLOR: data[CONF_COLOR],
+            }
         )
         details = {
             key: data[key]
-            for key in (CONF_DIAMETER, CONF_LOW_STOCK_THRESHOLD)
+            for key in (CONF_DIAMETER, CONF_LOW_STOCK_THRESHOLD, CONF_VARIANT)
             if key in data
         }
         _guard(

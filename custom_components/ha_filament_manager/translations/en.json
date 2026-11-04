@@ -192,6 +192,10 @@
         "low_stock_threshold": {
           "name": "Low stock warning below",
           "description": "In percent."
+        },
+        "variant": {
+          "name": "Variant",
+          "description": "e.g. Matte, Silk, CF. Optional; empty removes it."
         }
       }
     },
@@ -242,6 +246,10 @@
         "cloud_sync": {
           "name": "Follow the cloud's remaining amount",
           "description": ""
+        },
+        "variant": {
+          "name": "Variant",
+          "description": "e.g. Matte, Silk, CF. Optional; empty removes it."
         }
       }
     },

@@ -5,6 +5,7 @@ import pytest
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
 
 from custom_components.ha_filament_manager.const import CARD_URL_PATH, DOMAIN
@@ -177,6 +178,7 @@ async def test_options_and_suggestions(hass: HomeAssistant, hass_ws_client) -> N
     result = (await client.receive_json())["result"]
     assert result["materials"][0] == "ABS" and result["materials"][-1] == "Sonstiges"  # sorted, catch-all last
     assert result["manufacturers"][-1] == "Sonstiges"
+    assert {"Anycubic", "BIQU"} <= set(result["manufacturers"]) and "Matte" in result["variants"]
     assert "Anycubic" in result["manufacturers"] and {"Cyan", "Magenta"} <= set(result["colors"])
     assert result["default_material"] == "PETG" and "Schwarz" in result["colors"]
     assert result["diameters"] == ["1.75", "2.85"]
@@ -186,6 +188,11 @@ async def test_options_and_suggestions(hass: HomeAssistant, hass_ws_client) -> N
         {"id": 2, "type": f"{DOMAIN}/suggest", "material": "TPU", "color": "Rot", "manufacturer": "Elegoo"}
     )
     assert (await client.receive_json())["result"] == {"name": "Elegoo TPU Rot", "total_weight": 500}
+
+    await client.send_json(
+        {"id": 3, "type": f"{DOMAIN}/suggest", "material": "PETG", "variant": "CF (Kohlefaser)", "color": "Schwarz", "manufacturer": "BIQU"}
+    )
+    assert (await client.receive_json())["result"]["name"] == "BIQU PETG CF (Kohlefaser) Schwarz"
 
 
 async def test_the_card_is_served_and_registered(hass: HomeAssistant, hass_client) -> None:
@@ -202,3 +209,21 @@ async def test_the_card_is_served_and_registered(hass: HomeAssistant, hass_clien
     assert 'customElements.define("filament-manager-card"' in body
     assert "/subscribe" in body and "show_stock" in body and "group_by" in body
     assert "appearance" in body and "set_print_notification" in body and "test_print_notification" in body
+
+
+async def test_a_variant_is_part_of_the_name_and_the_labels(hass: HomeAssistant) -> None:
+    entry, runtime = await setup_inventory(hass)
+    manager = runtime.manager
+    await call(hass, "add_box", name=BOX)
+    (box,) = manager.boxes.values()
+    await call(hass, "add_spool", box=box.id, material="PLA", variant="Matte", color="Schwarz", manufacturer="Elegoo")
+    (spool,) = manager.spools.values()
+    assert (spool.name, spool.material, spool.variant) == ("Elegoo PLA Matte Schwarz", "PLA", "Matte")
+    assert hass.states.get("number.elegoo_pla_matte_schwarz_remaining_weight").attributes["variant"] == "Matte"
+    assert dr.async_get(hass).async_get(device_id(hass, entry, spool.id)).model == "PLA Matte"
+
+    # The limits follow the base material, not the variant.
+    assert manager.box_limits(box.id) == (50, 60)
+
+    await call(hass, "update_spool", spool=spool.id, variant="")
+    assert spool.variant == ""

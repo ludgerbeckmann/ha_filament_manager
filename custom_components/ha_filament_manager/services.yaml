@@ -93,6 +93,11 @@ add_spool:
       example: PLA
       selector:
         text:
+    variant:
+      required: false
+      example: Matte
+      selector:
+        text:
     color:
       required: true
       example: Schwarz
@@ -151,6 +156,10 @@ update_spool:
       selector:
         text:
     material:
+      required: false
+      selector:
+        text:
+    variant:
       required: false
       selector:
         text:
