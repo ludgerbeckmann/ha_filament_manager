@@ -347,3 +347,38 @@ async def test_the_end_of_a_long_print_names_the_day(hass: HomeAssistant, sent, 
     await settle(hass)
     end = dt_util.as_local(dt_util.utcnow() + timedelta(minutes=60 * 30))
     assert f"fertig ca. {end.day}.{end.month}. {end:%H:%M}" in sent[0][1]["message"]
+
+
+async def test_the_100_percent_left_over_from_the_last_print_is_not_shown(hass: HomeAssistant, sent) -> None:
+    """A new print starts while the printer still reports the 100 % of the print before."""
+    await configured(hass)
+    set_print(hass, "running", 99, minutes=1)
+    await settle(hass)
+    set_print(hass, "finish", 100)
+    await settle(hass)
+    sent.clear()
+
+    set_print(hass, "prepare", 100, minutes=0, job="Next.3mf")  # status changes first, progress still 100
+    await settle(hass)
+    assert sent[0][1]["data"]["progress"] == 0
+    assert sent[0][1]["message"] == "Vorbereitung · Next.3mf"
+
+    set_print(hass, "running", 100, minutes=0, job="Next.3mf")
+    await settle(hass)
+    assert sent[-1][1]["data"]["progress"] == 0
+
+    set_print(hass, "running", 3, minutes=120, job="Next.3mf")  # the real progress arrives
+    await settle(hass)
+    assert sent[-1][1]["data"]["progress"] == 3
+    set_print(hass, "running", 100, minutes=0, job="Next.3mf")  # and a real 100 % is shown again
+    await settle(hass)
+    assert sent[-1][1]["data"]["progress"] == 100
+
+
+async def test_a_print_that_starts_from_zero_is_not_touched(hass: HomeAssistant, sent) -> None:
+    await configured(hass)
+    set_print(hass, "prepare", 0)
+    await settle(hass)
+    set_print(hass, "running", 100, minutes=0)  # a (very short) print really is at 100 %
+    await settle(hass)
+    assert sent[-1][1]["data"]["progress"] == 100

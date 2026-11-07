@@ -12,7 +12,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .ams import slot_entities
+from .ams import ams_units, slot_entities
 from .cloud import cloud_spools
 from .const import (
     COLOR_OPTIONS,
@@ -30,7 +30,7 @@ from .const import (
     suggested_total_weight,
 )
 from .choices import sorted_options, suggest_name
-from .printing import notify_services, printers
+from .printing import notify_services, printer_entities, printers
 from .runtime import FilamentRuntime, get_runtime
 
 
@@ -50,6 +50,7 @@ def build_snapshot(hass: HomeAssistant, runtime: FilamentRuntime) -> dict[str, A
                 "id": box.id,
                 "name": box.name,
                 "humidity_sensor": box.humidity_sensor,
+                "temperature_sensor": box.temperature_sensor,
                 "humidity_max": box.humidity_max,
                 "humidity_delay": box.humidity_delay,
                 "effective_humidity_max": threshold,
@@ -113,6 +114,11 @@ def build_snapshot(hass: HomeAssistant, runtime: FilamentRuntime) -> dict[str, A
         "boxes": boxes,
         "spools": spools,
         "slots": slot_entities(hass),
+        "ams": ams_units(hass),
+        "printers": [
+            {"serial": printer.serial, "name": printer.name, "entities": printer_entities(hass, printer.serial)}
+            for printer in printers(hass)
+        ],
         "cloud": cloud,
         "print_notification": print_notification,
         "alerts": {

@@ -80,6 +80,37 @@ def printers(hass: HomeAssistant) -> list[Printer]:
     return sorted(found, key=lambda printer: printer.name.casefold())
 
 
+# What the printer card shows: sensor keys of ha-bambulab ("{serial}_{key}").
+PRINTER_SENSORS = (
+    "print_status",
+    "print_progress",
+    "remaining_time",
+    "start_time",
+    "end_time",
+    "subtask_name",
+    "gcode_file",
+    "current_layer",
+    "total_layers",
+    "print_weight",
+    "nozzle_temp",
+    "bed_temp",
+    "chamber_temp",
+    "active_tray",
+)
+
+
+def printer_entities(hass: HomeAssistant, serial: str) -> dict[str, str]:
+    """The entity ids of a printer's sensors (and its cover image) that exist, by key."""
+    registry = er.async_get(hass)
+    found: dict[str, str] = {}
+    for key in PRINTER_SENSORS:
+        if entity_id := registry.async_get_entity_id("sensor", BAMBULAB_DOMAIN, f"{serial}_{key}"):
+            found[key] = entity_id
+    if entity_id := registry.async_get_entity_id("image", BAMBULAB_DOMAIN, f"{serial}_cover_image"):
+        found["cover_image"] = entity_id
+    return found
+
+
 def notify_services(hass: HomeAssistant) -> list[str]:
     """The Companion apps' notify services (the only ones that can show a Live Activity)."""
     return sorted(name for name in hass.services.async_services_for_domain("notify") if name.startswith("mobile_app_"))
@@ -107,6 +138,8 @@ class PrintNotifier:
         self._previous_status: str | None = None
         self._last_sent: tuple[Any, ...] | None = None
         self._live = False
+        # A new print starts while the printer still reports the 100 % of the last one.
+        self._stale_progress = False
 
     # -------------------------------------------------------------- lifecycle
 
@@ -126,6 +159,7 @@ class PrintNotifier:
         self._tracked = tracked
         self._live = False
         self._last_sent = None
+        self._stale_progress = False
         if tracked:
             self._previous_status = self._status(printer)  # a print that already ended is not announced again
             self._unsubscribe = async_track_state_change_event(self._hass, list(tracked), self._handle_event)
@@ -170,6 +204,22 @@ class PrintNotifier:
     def _status(self, printer: Printer) -> str | None:
         state = self._state(printer, "print_status")
         return state.state.lower() if state else None
+
+    def _raw_progress(self, printer: Printer) -> int:
+        state = self._state(printer, "print_progress")
+        try:
+            return int(float(state.state)) if state else 0
+        except ValueError:
+            return 0
+
+    def _progress(self, printer: Printer) -> int:
+        """The progress to show: not the 100 % that is left over from the print before."""
+        progress = self._raw_progress(printer)
+        if self._stale_progress:
+            if progress >= 100:
+                return 0
+            self._stale_progress = False
+        return progress
 
     def _remaining_minutes(self, printer: Printer) -> float:
         state = self._state(printer, "remaining_time")
@@ -217,6 +267,8 @@ class PrintNotifier:
         previous, self._previous_status = self._previous_status, status
 
         if status in ACTIVE:
+            if previous not in ACTIVE:  # a print has just started
+                self._stale_progress = self._raw_progress(printer) >= 100
             payload = self._live_payload(printer, status)
             key = (payload["message"], payload["data"]["progress"], status)
             if key != self._last_sent:
@@ -259,11 +311,7 @@ class PrintNotifier:
 
     def _live_payload(self, printer: Printer, status: str, **override: Any) -> dict[str, Any]:
         settings = self._manager.print_settings
-        state = self._state(printer, "print_progress")
-        try:
-            progress = int(float(state.state)) if state else 0
-        except ValueError:
-            progress = 0
+        progress = self._progress(printer)
         job = override.get("job", self._job(printer))
         minutes = override.get("minutes", self._remaining_minutes(printer))
         remaining = format_remaining(minutes)

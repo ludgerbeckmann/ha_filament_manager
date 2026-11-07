@@ -286,6 +286,10 @@
         "spool_limit": {
           "name": "Maximum number of spools",
           "description": "Empty = unlimited."
+        },
+        "temperature_sensor": {
+          "name": "Temperature sensor",
+          "description": "Optional; only shown on the card, no alert. Empty removes it."
         }
       }
     },
@@ -316,6 +320,10 @@
         "spool_limit": {
           "name": "Maximum number of spools",
           "description": ""
+        },
+        "temperature_sensor": {
+          "name": "Temperature sensor",
+          "description": "Optional; only shown on the card, no alert. Empty removes it."
         }
       }
     },

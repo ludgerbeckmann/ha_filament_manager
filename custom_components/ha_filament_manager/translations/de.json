@@ -286,6 +286,10 @@
         "spool_limit": {
           "name": "Maximale Spulenanzahl",
           "description": "Leer = unbegrenzt."
+        },
+        "temperature_sensor": {
+          "name": "Temperatursensor",
+          "description": "Optional; wird nur in der Karte angezeigt, ohne Warnung. Leer entfernt ihn."
         }
       }
     },
@@ -316,6 +320,10 @@
         "spool_limit": {
           "name": "Maximale Spulenanzahl",
           "description": ""
+        },
+        "temperature_sensor": {
+          "name": "Temperatursensor",
+          "description": "Optional; wird nur in der Karte angezeigt, ohne Warnung. Leer entfernt ihn."
         }
       }
     },

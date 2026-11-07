@@ -24,6 +24,7 @@ from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
@@ -50,6 +51,43 @@ def slot_entities(hass: HomeAssistant) -> list[str]:
         and not entry.disabled
         and _AMS_TRAY_RE.match(entry.unique_id or "")
     )
+
+
+_AMS_TRAY_UID_RE = re.compile(r"^(?P<prefix>[^_]+_[^_]+_AMS_[^_]+)_tray_(?P<number>\d+)$")
+_AMS_DEVICE_RE = re.compile(r"_AMS_(?P<index>\d+)$")
+
+
+def ams_units(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """The AMS units of the Bambu Lab integration: name, climate sensors and their slot sensors."""
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    units: dict[str, dict[str, Any]] = {}
+    for entry in ent_reg.entities.values():
+        if entry.platform != BAMBULAB_DOMAIN or entry.domain != "sensor" or entry.disabled:
+            continue
+        if not (match := _AMS_TRAY_UID_RE.match(entry.unique_id or "")):
+            continue
+        key = entry.device_id or match.group("prefix")
+        unit = units.setdefault(key, {"id": key, "prefix": match.group("prefix"), "slots": []})
+        unit["slots"].append({"entity_id": entry.entity_id, "number": int(match.group("number"))})
+
+    result: list[dict[str, Any]] = []
+    for unit in units.values():
+        device = dev_reg.async_get(unit["id"])
+        index = 0
+        if device and (match := _AMS_DEVICE_RE.search(device.name or "")):
+            index = int(match.group("index"))
+        prefix = unit.pop("prefix")
+        unit["model"] = (device and device.model) or "AMS"
+        unit["index"] = index
+        unit["humidity_entity"] = ent_reg.async_get_entity_id("sensor", BAMBULAB_DOMAIN, f"{prefix}_humidity")
+        unit["temperature_entity"] = ent_reg.async_get_entity_id("sensor", BAMBULAB_DOMAIN, f"{prefix}_temperature")
+        unit["slots"].sort(key=lambda slot: slot["number"])
+        result.append(unit)
+    result.sort(key=lambda unit: unit["index"])
+    for unit in result:  # with several units the number tells them apart ("AMS HT" has none)
+        unit["name"] = f'{unit["model"]} {unit["index"]}' if len(result) > 1 and 0 < unit["index"] < 128 else unit["model"]
+    return result
 
 
 def _valid_uid(value: Any) -> bool:

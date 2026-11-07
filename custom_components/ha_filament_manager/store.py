@@ -53,6 +53,7 @@ class Box:
     id: str
     name: str
     humidity_sensor: str | None = None
+    temperature_sensor: str | None = None  # only shown, no alert
     humidity_max: float | None = None  # None = automatic, from the materials inside
     humidity_delay: float | None = None  # minutes; None = automatic
     spool_limit: int | None = None  # None = any number of spools
@@ -274,7 +275,7 @@ class FilamentManager:
     def _clean(values: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
         """Keep only known fields; empty strings of optional fields mean "not set"."""
         cleaned = {key: value for key, value in values.items() if key in allowed}
-        for key in ("humidity_sensor", "ams_slot", "cloud_spool"):
+        for key in ("humidity_sensor", "temperature_sensor", "ams_slot", "cloud_spool"):
             if key in cleaned and not cleaned[key]:
                 cleaned[key] = None
         # A limit of 0 means "none"; only a delay of 0 is meaningful (alert at once).
