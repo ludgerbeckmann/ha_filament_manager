@@ -58,6 +58,47 @@ function percentTone(percent) {
   return "var(--success-color, #43a047)";
 }
 
+/**
+ * The colour scheme of a card: "dark" or "light" to force one, null to follow
+ * the Home Assistant theme (the default). `appearance: system` follows the
+ * device's setting; `dark_background: true` is the old spelling of `dark`.
+ */
+function schemeOf(config) {
+  config = config || {};
+  const appearance = config.appearance || (config.dark_background ? "dark" : "theme");
+  if (appearance === "dark" || appearance === "light") return appearance;
+  if (appearance === "system") {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return null;
+}
+
+const SCHEME_CSS = `
+        /* Like the Bambu Lab cards: a black card with light text, whatever the theme. */
+        .scheme-dark {
+          --ha-card-background: #1c1c1c;
+          --card-background-color: #1c1c1c;
+          --primary-text-color: #ffffff;
+          --secondary-text-color: #a0a0a0;
+          --divider-color: rgba(255, 255, 255, 0.12);
+          --secondary-background-color: #2c2c2c;
+          color-scheme: dark;
+        }
+        .scheme-light {
+          --ha-card-background: #ffffff;
+          --card-background-color: #ffffff;
+          --primary-text-color: #212121;
+          --secondary-text-color: #727272;
+          --divider-color: #e0e0e0;
+          --secondary-background-color: rgba(0, 0, 0, 0.06);
+          color-scheme: light;
+        }
+        ha-card.scheme-dark, ha-card.scheme-light {
+          background: var(--ha-card-background);
+          color: var(--primary-text-color);
+        }
+`;
+
 class FilamentManagerCard extends HTMLElement {
   constructor() {
     super();
@@ -110,19 +151,9 @@ class FilamentManagerCard extends HTMLElement {
     return value === "material" || value === "none" ? value : "box";
   }
 
-  /**
-   * The colour scheme of the card: "dark" or "light" to force one, null to
-   * follow the Home Assistant theme (the default). `appearance: system` follows
-   * the device's setting; `dark_background: true` is the old spelling of `dark`.
-   */
+  /** "dark", "light" or null (= follow the Home Assistant theme); see schemeOf(). */
   _scheme() {
-    const config = this._config || {};
-    const appearance = config.appearance || (config.dark_background ? "dark" : "theme");
-    if (appearance === "dark" || appearance === "light") return appearance;
-    if (appearance === "system") {
-      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    }
-    return null;
+    return schemeOf(this._config);
   }
 
   _showStock() {
@@ -602,29 +633,7 @@ class FilamentManagerCard extends HTMLElement {
       <style>
 
         ha-card { padding: 16px; }
-        /* Like the Bambu Lab cards: a black card with light text, whatever the theme. */
-        .scheme-dark {
-          --ha-card-background: #1c1c1c;
-          --card-background-color: #1c1c1c;
-          --primary-text-color: #ffffff;
-          --secondary-text-color: #a0a0a0;
-          --divider-color: rgba(255, 255, 255, 0.12);
-          --secondary-background-color: #2c2c2c;
-          color-scheme: dark;
-        }
-        .scheme-light {
-          --ha-card-background: #ffffff;
-          --card-background-color: #ffffff;
-          --primary-text-color: #212121;
-          --secondary-text-color: #727272;
-          --divider-color: #e0e0e0;
-          --secondary-background-color: rgba(0, 0, 0, 0.06);
-          color-scheme: light;
-        }
-        ha-card.scheme-dark, ha-card.scheme-light {
-          background: var(--ha-card-background);
-          color: var(--primary-text-color);
-        }
+        ${SCHEME_CSS}
         .header {
           display: flex;
           align-items: center;
@@ -1484,31 +1493,7 @@ window.customCards.push({
  * from the field after every single character, making the title appear
  * impossible to edit.
  */
-class FilamentManagerCardEditor extends HTMLElement {
-  setConfig(config) {
-    this._config = config || {};
-    this._renderOrSync();
-  }
-
-  set hass(hass) {
-    this._hass = hass;
-  }
-
-  connectedCallback() {
-    this._renderOrSync();
-  }
-
-  _renderOrSync() {
-    if (!this._config) return;
-    if (!this.shadowRoot) {
-      this.attachShadow({ mode: "open" });
-      this._renderShell();
-    }
-    this._syncField();
-  }
-
-  _renderShell() {
-    this.shadowRoot.innerHTML = `
+const EDITOR_STYLE = `
       <style>
         .form { padding: 16px 0; }
         label {
@@ -1568,6 +1553,34 @@ class FilamentManagerCardEditor extends HTMLElement {
           cursor: pointer;
         }
       </style>
+`;
+
+class FilamentManagerCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = config || {};
+    this._renderOrSync();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+  }
+
+  connectedCallback() {
+    this._renderOrSync();
+  }
+
+  _renderOrSync() {
+    if (!this._config) return;
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: "open" });
+      this._renderShell();
+    }
+    this._syncField();
+  }
+
+  _renderShell() {
+    this.shadowRoot.innerHTML = `
+      ${EDITOR_STYLE}
       <div class="form">
         <label for="title">Titel (leer lassen für „Filament Manager“)</label>
         <input id="title" type="text" autocomplete="off" />
@@ -1667,3 +1680,466 @@ class FilamentManagerCardEditor extends HTMLElement {
 }
 
 customElements.define("filament-manager-card-editor", FilamentManagerCardEditor);
+
+// ============================================================ print card
+
+const PRINT_STATUS = {
+  running: ["Druckt", "#00AE42"],
+  pause: ["Pausiert", "#FF9800"],
+  prepare: ["Vorbereitung", "#2196F3"],
+  slicing: ["Slicen", "#2196F3"],
+  init: ["Startet", "#2196F3"],
+  finish: ["Fertig", "#00AE42"],
+  failed: ["Fehlgeschlagen", "#db4437"],
+  idle: ["Bereit", "#9e9e9e"],
+  offline: ["Offline", "#9e9e9e"],
+};
+const PRINT_ACTIVE = ["running", "pause", "prepare", "slicing", "init"];
+const NO_VALUE = ["unknown", "unavailable", ""];
+
+/** "1 h 4 min" / "12 min". */
+function formatDuration(minutes) {
+  const total = Math.round(minutes);
+  if (!(total > 0)) return "";
+  const hours = Math.floor(total / 60);
+  return hours ? `${hours} h ${total % 60} min` : `${total} min`;
+}
+
+/**
+ * The second card: what a Bambu Lab printer is doing right now - the job with
+ * its cover image, progress, time left and end, layers, temperatures and the
+ * filament in use. Reads the sensors of the Bambu Lab integration (the entity
+ * ids come from the Filament Manager's snapshot), the inventory gives the
+ * name and remaining amount of the spool in use.
+ */
+class FilamentManagerPrintCard extends HTMLElement {
+  constructor() {
+    super();
+    this._snapshot = null;
+    this._unsubscribe = null;
+  }
+
+  setConfig(config) {
+    const previous = this._config;
+    this._config = config || {};
+    if (previous) {
+      this._lastSignature = undefined;
+      this._renderIfReady();
+    }
+  }
+
+  static getStubConfig() {
+    return {};
+  }
+
+  static getConfigElement() {
+    return document.createElement("filament-manager-print-card-editor");
+  }
+
+  getCardSize() {
+    return 5;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._subscribe();
+    this._renderIfReady();
+  }
+
+  connectedCallback() {
+    this._subscribe();
+    if (window.matchMedia && !this._schemeQuery) {
+      this._schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      this._onSchemeChange = () => this._renderIfReady();
+      this._schemeQuery.addEventListener("change", this._onSchemeChange);
+    }
+    this._renderIfReady();
+  }
+
+  disconnectedCallback() {
+    if (this._schemeQuery) {
+      this._schemeQuery.removeEventListener("change", this._onSchemeChange);
+      this._schemeQuery = null;
+    }
+    const unsubscribe = this._unsubscribe;
+    this._unsubscribe = null;
+    if (unsubscribe) unsubscribe.then((unsub) => unsub()).catch(() => {});
+  }
+
+  _subscribe() {
+    if (this._unsubscribe || !this._hass || !this.isConnected || !this._hass.connection) return;
+    this._unsubscribe = this._hass.connection
+      .subscribeMessage(
+        (snapshot) => {
+          this._snapshot = snapshot;
+          this._error = null;
+          this._lastSignature = undefined;
+          this._renderIfReady();
+        },
+        { type: `${PLATFORM}/subscribe` }
+      )
+      .catch((err) => {
+        this._unsubscribe = null;
+        this._error = (err && err.message) || "Keine Verbindung zum Filament Manager.";
+        this._lastSignature = undefined;
+        this._renderIfReady();
+        throw err;
+      });
+    this._unsubscribe.catch(() => {});
+  }
+
+  _renderIfReady() {
+    if (!this._hass || !this._config) return;
+    const view = this._view();
+    const signature = JSON.stringify([view, this._error, schemeOf(this._config)]);
+    if (signature === this._lastSignature) return;
+    this._lastSignature = signature;
+    this._render(view);
+  }
+
+  // -------------------------------------------------------------------- data
+
+  /** Everything the card shows, computed from the live states; null while there is nothing to show yet. */
+  _view() {
+    const snapshot = this._snapshot;
+    if (!snapshot) return null;
+    const config = this._config;
+    const list = snapshot.printers || [];
+    const printer = list.find((item) => item.serial === config.printer) || list[0];
+    if (!printer) return { none: true };
+
+    const states = this._hass.states || {};
+    const entities = printer.entities || {};
+    const state = (key) => {
+      const entity = entities[key] ? states[entities[key]] : undefined;
+      return entity && !NO_VALUE.includes(entity.state) ? entity : null;
+    };
+    const number = (key) => {
+      const entity = state(key);
+      const value = entity ? Number(entity.state) : NaN;
+      return Number.isFinite(value) ? value : null;
+    };
+    const time = (key) => {
+      const entity = state(key);
+      const value = entity ? new Date(entity.state) : null;
+      return value && !Number.isNaN(value.getTime()) ? value : null;
+    };
+    const temperature = (key) => {
+      const value = number(key);
+      if (value === null) return null;
+      return `${Math.round(value)} ${(states[entities[key]].attributes.unit_of_measurement) || "°C"}`;
+    };
+
+    const status = (state("print_status") || { state: "unknown" }).state;
+    const [statusText, statusColor] = PRINT_STATUS[status] || [status === "unknown" ? "Unbekannt" : status, "#9e9e9e"];
+    const active = PRINT_ACTIVE.includes(status);
+    const showJob = active || status === "finish" || status === "failed";
+
+    let progress = number("print_progress");
+    // The printer still reports the 100 % of the last print while a new one is prepared.
+    if (status === "prepare" && progress !== null && progress >= 100) progress = 0;
+    if (status === "finish") progress = 100;
+
+    let minutes = null;
+    const remaining = state("remaining_time");
+    if (remaining && active) {
+      const value = Number(remaining.state);
+      const unit = remaining.attributes.unit_of_measurement;
+      if (Number.isFinite(value)) minutes = unit === "h" ? value * 60 : unit === "s" ? value / 60 : value;
+    }
+    let end = time("end_time");
+    if (active && minutes !== null && (!end || Math.abs(end.getTime() - Date.now() - minutes * 60000) > 15 * 60000)) {
+      end = new Date(Date.now() + minutes * 60000);
+    }
+    const start = time("start_time");
+
+    const trayId = (snapshot.slots || []).find((id) => states[id] && states[id].attributes.active === true);
+    let filament = null;
+    if (trayId && active) {
+      const attributes = states[trayId].attributes;
+      const spool = (snapshot.spools || []).find((item) => item.ams_slot === trayId);
+      const color = typeof attributes.color === "string" && /^#?[0-9a-f]{6}/i.test(attributes.color) ? `#${attributes.color.replace("#", "").slice(0, 6)}` : null;
+      filament = {
+        name: spool ? spool.name : attributes.name || states[trayId].state,
+        detail: spool ? `${spool.percent !== null ? `${spool.percent}% · ` : ""}${spool.remaining_weight} g` : attributes.type || "",
+        color: spool ? swatchFor(spool.color) : color,
+        entity: trayId,
+      };
+    }
+
+    const cover = entities.cover_image && states[entities.cover_image];
+    const layer = number("current_layer");
+    const layers = number("total_layers");
+    const weight = number("print_weight");
+    return {
+      none: false,
+      name: printer.name,
+      statusEntity: entities.print_status || null,
+      status,
+      statusText,
+      statusColor,
+      active,
+      job: showJob ? (state("subtask_name") || state("gcode_file") || { state: "" }).state : "",
+      cover: showJob && cover && cover.attributes.entity_picture ? cover.attributes.entity_picture : null,
+      progress,
+      remaining: minutes !== null ? formatDuration(minutes) : "",
+      end: active && end ? this._formatTime(end) : "",
+      start: showJob && start ? this._formatTime(start) : "",
+      finishedAt: !active && showJob && end ? this._formatTime(end) : "",
+      layers: showJob && layer !== null && layers ? `${layer} / ${layers}` : "",
+      weight: showJob && weight ? `${Math.round(weight)} g` : "",
+      temperatures: [
+        ["mdi:printer-3d-nozzle-heat-outline", "Düse", temperature("nozzle_temp")],
+        ["mdi:radiator", "Bett", temperature("bed_temp")],
+        ["mdi:thermometer", "Kammer", temperature("chamber_temp")],
+      ].filter((item) => item[2]),
+      filament,
+    };
+  }
+
+  /** "17:42", or "8.11. 17:42" for another day. */
+  _formatTime(date) {
+    const locale = this._hass.locale && this._hass.locale.language;
+    const clock = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+    return date.toDateString() === new Date().toDateString()
+      ? clock
+      : `${date.toLocaleDateString(locale, { day: "numeric", month: "numeric" })} ${clock}`;
+  }
+
+  // --------------------------------------------------------------- rendering
+
+  _tile(label, value) {
+    return value ? `<div class="tile"><div class="tile-label">${esc(label)}</div><div class="tile-value">${esc(value)}</div></div>` : "";
+  }
+
+  _render(view) {
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    const config = this._config;
+    const showTemperatures = config.show_temperatures !== false;
+    const showFilament = config.show_filament !== false;
+    const showCover = config.show_cover !== false;
+
+    let body;
+    if (this._error) {
+      body = `<div class="empty">${esc(this._error)}</div>`;
+    } else if (!view) {
+      body = `<div class="empty">Lade …</div>`;
+    } else if (view.none) {
+      body = `<div class="empty">Keine Bambu-Lab-Drucker gefunden (Integration ha-bambulab nötig).</div>`;
+    } else {
+      const progress = view.progress !== null ? Math.max(0, Math.min(100, view.progress)) : null;
+      const bar =
+        progress !== null && view.job
+          ? `<div class="progress"><div class="track"><div class="fill" style="width:${progress}%;background:${view.statusColor}"></div></div>
+               <span class="percent">${Math.round(progress)}%</span></div>`
+          : "";
+      const job = view.job
+        ? `<div class="job">
+             ${showCover && view.cover ? `<img class="cover" src="${esc(view.cover)}" alt="" />` : ""}
+             <div class="job-text">
+               <div class="job-name" title="${esc(view.job)}">${esc(view.job)}</div>
+               ${bar}
+             </div>
+           </div>`
+        : `<div class="idle">${view.status === "offline" ? "Der Drucker ist nicht erreichbar." : "Kein Druck aktiv."}</div>`;
+      const tiles = [
+        this._tile("Verbleibend", view.remaining),
+        this._tile("Fertig um", view.end),
+        this._tile("Fertig seit", view.finishedAt),
+        this._tile("Gestartet", view.start),
+        this._tile("Schicht", view.layers),
+        this._tile("Gewicht", view.weight),
+      ].join("");
+      const temperatures =
+        showTemperatures && view.temperatures.length
+          ? `<div class="temps">${view.temperatures
+              .map(([icon, label, value]) => `<span class="temp"><ha-icon icon="${icon}" title="${esc(label)}"></ha-icon>${esc(label)} <b>${esc(value)}</b></span>`)
+              .join("")}</div>`
+          : "";
+      const filament =
+        showFilament && view.filament
+          ? `<div class="filament" data-entity="${esc(view.filament.entity)}">
+               <span class="swatch ${view.filament.color ? "" : "transparent"}" style="${view.filament.color ? `background:${view.filament.color}` : ""}"></span>
+               <span class="filament-name">${esc(view.filament.name)}</span>
+               <span class="filament-detail">${esc(view.filament.detail)}</span>
+             </div>`
+          : "";
+      body = `${job}${tiles ? `<div class="tiles">${tiles}</div>` : ""}${filament}${temperatures}`;
+    }
+
+    const title = config.title !== undefined && config.title !== "" ? config.title : view && !view.none ? view.name : "Drucker";
+    const chip =
+      view && !view.none
+        ? `<span class="chip" style="--chip:${view.statusColor}">${esc(view.statusText)}</span>`
+        : "";
+    const scheme = schemeOf(config);
+    this.shadowRoot.innerHTML = `
+      <style>
+        ${SCHEME_CSS}
+        ha-card { padding: 16px; }
+        .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 1.2em; font-weight: 500; margin-bottom: 12px; }
+        .header .title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .header[data-entity] { cursor: pointer; }
+        .chip {
+          flex: none; font-size: 0.7em; font-weight: 500; padding: 3px 10px; border-radius: 12px;
+          color: var(--chip); border: 1px solid var(--chip);
+          background: color-mix(in srgb, var(--chip) 15%, transparent);
+        }
+        .job { display: flex; align-items: center; gap: 14px; }
+        .cover { width: 88px; height: 88px; flex: none; border-radius: 8px; object-fit: cover; background: var(--secondary-background-color); }
+        .job-text { flex: 1 1 auto; min-width: 0; }
+        .job-name { font-size: 1.05em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--primary-text-color); }
+        .progress { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+        .track { flex: 1 1 auto; height: 8px; border-radius: 4px; background: var(--divider-color); overflow: hidden; }
+        .fill { height: 100%; border-radius: 4px; }
+        .percent { flex: none; min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+        .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px 12px; margin-top: 14px; }
+        .tile { padding: 8px 10px; border-radius: 8px; background: var(--secondary-background-color); }
+        .tile-label { font-size: 0.75em; color: var(--secondary-text-color); }
+        .tile-value { font-size: 1.05em; font-variant-numeric: tabular-nums; }
+        .filament { display: flex; align-items: center; gap: 8px; margin-top: 14px; cursor: pointer; }
+        .filament-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .filament-detail { flex: none; color: var(--secondary-text-color); font-size: 0.85em; }
+        .swatch { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--divider-color); flex: none; }
+        .scheme-dark .swatch { border-color: rgba(255, 255, 255, 0.55); }
+        .swatch.transparent {
+          background-color: #fff;
+          background-image: linear-gradient(45deg, #bbb 25%, transparent 25%), linear-gradient(-45deg, #bbb 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #bbb 75%), linear-gradient(-45deg, transparent 75%, #bbb 75%);
+          background-size: 6px 6px; background-position: 0 0, 0 3px, 3px -3px, -3px 0;
+        }
+        .temps { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--divider-color); color: var(--secondary-text-color); font-size: 0.9em; }
+        .temp { display: inline-flex; align-items: center; gap: 4px; }
+        .temp ha-icon { --mdc-icon-size: 18px; }
+        .temp b { color: var(--primary-text-color); font-weight: 500; font-variant-numeric: tabular-nums; }
+        .idle, .empty { color: var(--secondary-text-color); padding: 4px 0; }
+      </style>
+      <ha-card class="${scheme ? `scheme-${scheme}` : ""}">
+        <div class="header" ${view && view.statusEntity ? `data-entity="${esc(view.statusEntity)}"` : ""}><span class="title">${esc(title)}</span>${chip}</div>
+        ${body}
+      </ha-card>
+    `;
+    this.shadowRoot.querySelectorAll("[data-entity]").forEach((element) => {
+      element.addEventListener("click", () => {
+        this.dispatchEvent(
+          new CustomEvent("hass-more-info", { bubbles: true, composed: true, detail: { entityId: element.getAttribute("data-entity") } })
+        );
+      });
+    });
+  }
+}
+
+customElements.define("filament-manager-print-card", FilamentManagerPrintCard);
+
+window.customCards.push({
+  type: "filament-manager-print-card",
+  name: "Filament Manager – Druck",
+  description: "Aktueller Druck eines Bambu-Lab-Druckers: Auftrag, Fortschritt, Restzeit, Temperaturen und verwendetes Filament.",
+  preview: false,
+});
+
+/** The editor of the print card (same approach as the editor above: the form is built once). */
+class FilamentManagerPrintCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = config || {};
+    this._renderOrSync();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._loadPrinters();
+  }
+
+  connectedCallback() {
+    this._renderOrSync();
+  }
+
+  async _loadPrinters() {
+    if (this._printers || this._loading || !this._hass) return;
+    this._loading = true;
+    try {
+      this._printers = (await this._hass.callWS({ type: `${PLATFORM}/printers` })).printers;
+    } catch (err) {
+      this._printers = [];
+    }
+    this._loading = false;
+    this._fillPrinters();
+  }
+
+  _renderOrSync() {
+    if (!this._config) return;
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: "open" });
+      this._renderShell();
+    }
+    this._syncFields();
+  }
+
+  _renderShell() {
+    this.shadowRoot.innerHTML = `
+      ${EDITOR_STYLE}
+      <div class="form">
+        <label for="title">Titel (leer lassen für den Namen des Druckers)</label>
+        <input id="title" type="text" autocomplete="off" />
+        <label for="printer" class="spaced">Drucker</label>
+        <select id="printer"><option value="">Erster Drucker</option></select>
+        <label class="option"><input id="show_cover" type="checkbox" /> Vorschaubild des Auftrags anzeigen</label>
+        <label class="option"><input id="show_filament" type="checkbox" /> Verwendetes Filament anzeigen</label>
+        <label class="option"><input id="show_temperatures" type="checkbox" /> Temperaturen anzeigen</label>
+        <label for="appearance" class="spaced">Darstellung</label>
+        <select id="appearance">
+          <option value="theme">Wie das Theme von Home Assistant (Standard)</option>
+          <option value="light">Hell</option>
+          <option value="dark">Dunkel (wie die Bambu-Lab-Karten)</option>
+          <option value="system">Wie die Einstellung des Geräts (System)</option>
+        </select>
+      </div>
+    `;
+    const root = this.shadowRoot;
+    root.querySelector("#title").addEventListener("input", (event) => this._updateConfig("title", event.target.value || undefined));
+    root.querySelector("#printer").addEventListener("change", (event) => this._updateConfig("printer", event.target.value || undefined));
+    root.querySelector("#show_cover").addEventListener("change", (event) => this._updateConfig("show_cover", event.target.checked ? undefined : false));
+    root.querySelector("#show_filament").addEventListener("change", (event) => this._updateConfig("show_filament", event.target.checked ? undefined : false));
+    root.querySelector("#show_temperatures").addEventListener("change", (event) =>
+      this._updateConfig("show_temperatures", event.target.checked ? undefined : false)
+    );
+    root.querySelector("#appearance").addEventListener("change", (event) =>
+      this._updateConfig("appearance", event.target.value === "theme" ? undefined : event.target.value)
+    );
+    this._fillPrinters();
+  }
+
+  _fillPrinters() {
+    const select = this.shadowRoot && this.shadowRoot.querySelector("#printer");
+    if (!select) return;
+    const wanted = this._config.printer || "";
+    const printers = this._printers || [];
+    select.innerHTML =
+      `<option value="">Erster Drucker</option>` +
+      printers.map((printer) => `<option value="${esc(printer.serial)}">${esc(printer.name)}</option>`).join("") +
+      (wanted && !printers.some((printer) => printer.serial === wanted) ? `<option value="${esc(wanted)}">${esc(wanted)}</option>` : "");
+    select.value = wanted;
+  }
+
+  _syncFields() {
+    const root = this.shadowRoot;
+    const field = root.querySelector("#title");
+    const desired = this._config.title || "";
+    if (root.activeElement !== field && field.value !== desired) field.value = desired;
+    root.querySelector("#printer").value = this._config.printer || "";
+    root.querySelector("#show_cover").checked = this._config.show_cover !== false;
+    root.querySelector("#show_filament").checked = this._config.show_filament !== false;
+    root.querySelector("#show_temperatures").checked = this._config.show_temperatures !== false;
+    root.querySelector("#appearance").value = this._config.appearance || "theme";
+  }
+
+  _updateConfig(key, value) {
+    const newConfig = { ...this._config };
+    if (value === undefined) delete newConfig[key];
+    else newConfig[key] = value;
+    this._config = newConfig;
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: newConfig }, bubbles: true, composed: true }));
+  }
+}
+
+customElements.define("filament-manager-print-card-editor", FilamentManagerPrintCardEditor);

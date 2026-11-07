@@ -134,6 +134,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_subscribe)
     websocket_api.async_register_command(hass, websocket_options)
     websocket_api.async_register_command(hass, websocket_suggest)
+    websocket_api.async_register_command(hass, websocket_printers)
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/subscribe"})
@@ -159,6 +160,15 @@ def websocket_subscribe(hass: HomeAssistant, connection: websocket_api.ActiveCon
     connection.subscriptions[msg["id"]] = async_dispatcher_connect(hass, SIGNAL_SNAPSHOT_DIRTY, _send)
     connection.send_result(msg["id"])
     _send()
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/printers"})
+@callback
+def websocket_printers(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The Bambu Lab printers (for the editor of the print card)."""
+    connection.send_result(
+        msg["id"], {"printers": [{"serial": printer.serial, "name": printer.name} for printer in printers(hass)]}
+    )
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/options"})

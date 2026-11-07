@@ -28,7 +28,8 @@ schlanke, native Home-Assistant-Integration ohne externen Server.
   Verzögerung automatisch nach dem empfindlichsten Material) und niedriger
   Bestand (pro Spule), jeweils mit Push- und/oder dauerhafter Benachrichtigung.
 - Optional eine **Druck-Benachrichtigung** als Live Activity (iPhone/iPad) auf
-  Basis der Bambu-Lab-Sensoren.
+  Basis der Bambu-Lab-Sensoren und eine **Druck-Karte** mit dem aktuellen
+  Auftrag.
 - Optional **Kopplung mit Bambu Lab** (AMS-Slots, „Im Drucker") und **Abgleich
   der Restmengen mit der Bambu-Cloud** (nur lesend).
 
@@ -354,6 +355,31 @@ Alle Optionen lassen sich auch im visuellen Karten-Editor setzen. Ein Klick
 auf eine Zeile öffnet die Restmenge (dort direkt editierbar), ein Klick auf das
 Luftfeuchtigkeits-Symbol den Feuchtigkeitssensor. Nach einem Update der
 Integration ggf. einmal den Browser-Cache leeren (Strg/Cmd+Shift+R).
+
+### Druck-Karte
+
+Die zweite mitgelieferte Karte **Filament Manager – Druck** zeigt, was ein
+Bambu-Lab-Drucker gerade tut – ähnlich wie die Auftragsansicht der Bambu-App:
+
+```yaml
+type: custom:filament-manager-print-card
+printer: 01P09C482100602   # optional: Seriennummer, sonst der erste Drucker
+title: Mein P1S            # optional, sonst der Name des Druckers
+show_cover: true           # optional: Vorschaubild des Auftrags (Standard: an)
+show_filament: true        # optional: verwendetes Filament (Standard: an)
+show_temperatures: true    # optional: Düse, Bett, Kammer (Standard: an)
+appearance: dark           # optional: theme | light | dark | system
+```
+
+Oben stehen der Druckername und ein **Status** (Druckt, Pausiert, Vorbereitung,
+Fertig, Fehlgeschlagen, Bereit, Offline). Während eines Drucks folgen
+Auftragsname mit Vorschaubild und Fortschrittsbalken, **Verbleibend**, **Fertig
+um**, **Gestartet**, **Schicht** (aktuell/gesamt) und **Gewicht**, das gerade
+verwendete **Filament** (bei einer zugeordneten Spule mit Name und Restmenge
+aus dem Bestand) sowie die **Temperaturen**. Ein Klick auf den Kopf öffnet den
+Status-Sensor, ein Klick auf das Filament den AMS-Slot. Die Karte braucht die
+Bambu-Lab-Integration (ha-bambulab) und liest deren Sensoren; alle Optionen
+gibt es auch im visuellen Editor.
 
 ### Einzelne Spule als Entitäten-Karte
 
