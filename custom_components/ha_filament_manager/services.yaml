@@ -224,6 +224,12 @@ add_box:
         entity:
           domain: sensor
           device_class: humidity
+    temperature_sensor:
+      required: false
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
     humidity_max:
       required: false
       selector:
@@ -266,6 +272,12 @@ update_box:
         entity:
           domain: sensor
           device_class: humidity
+    temperature_sensor:
+      required: false
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
     humidity_max:
       required: false
       selector:

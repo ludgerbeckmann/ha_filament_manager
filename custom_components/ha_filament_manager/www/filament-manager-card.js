@@ -88,7 +88,8 @@ class FilamentManagerCard extends HTMLElement {
       previous.appearance !== this._config.appearance ||
       Boolean(previous.dark_background) !== Boolean(this._config.dark_background) ||
       Boolean(previous.collapse_boxes) !== Boolean(this._config.collapse_boxes) ||
-      previous.show_stock !== this._config.show_stock
+      previous.show_stock !== this._config.show_stock ||
+      Boolean(previous.show_ams) !== Boolean(this._config.show_ams)
     ) {
       this._lastSignature = undefined;
       this._renderIfReady();
@@ -196,6 +197,7 @@ class FilamentManagerCard extends HTMLElement {
     const rows =
       groups.reduce((sum, group) => sum + (this._isCollapsed(group.key) ? 1 : 1 + group.spools.length), 0) +
       loose.length +
+      (this._config.show_ams ? data.ams.reduce((sum, unit) => sum + (this._isCollapsed(`ams:${unit.id}`) ? 1 : 1 + unit.slots.length), 0) : 0) +
       (stock.length ? 1 + stock.length : 0);
     return Math.max(1, rows) + 1;
   }
@@ -224,18 +226,62 @@ class FilamentManagerCard extends HTMLElement {
       const sensor = box.humidity_sensor ? states[box.humidity_sensor] : undefined;
       const value = sensor ? Number(sensor.state) : NaN;
       const alert = box.alert_entity ? states[box.alert_entity] : undefined;
+      const temperature = box.temperature_sensor ? states[box.temperature_sensor] : undefined;
+      const degrees = temperature ? Number(temperature.state) : NaN;
       boxes[box.id] = {
         ...box,
         hasHumidity: !!box.humidity_sensor,
         humidityValue: Number.isFinite(value) ? value : null,
         humidityAlert: !!alert && alert.state === "on",
+        hasTemperature: !!box.temperature_sensor,
+        temperatureValue: Number.isFinite(degrees) ? degrees : null,
+        temperatureUnit: (temperature && temperature.attributes.unit_of_measurement) || "°C",
       };
     }
     const spools = snapshot.spools.map((spool) => ({
       ...spool,
       boxName: spool.box_id && boxes[spool.box_id] ? boxes[spool.box_id].name : null,
     }));
-    return { boxes, spools, slots: snapshot.slots || [], cloud: snapshot.cloud, print: snapshot.print_notification, alerts: snapshot.alerts };
+    return {
+      boxes,
+      spools,
+      slots: snapshot.slots || [],
+      ams: this._collectAms(snapshot.ams || [], spools, states),
+      cloud: snapshot.cloud,
+      print: snapshot.print_notification,
+      alerts: snapshot.alerts,
+    };
+  }
+
+  /** The AMS units of the Bambu Lab integration with the live state of their trays. */
+  _collectAms(units, spools, states) {
+    const number = (entityId) => {
+      const value = entityId && states[entityId] ? Number(states[entityId].state) : NaN;
+      return Number.isFinite(value) ? value : null;
+    };
+    return units.map((unit) => ({
+      ...unit,
+      humidityValue: number(unit.humidity_entity),
+      temperatureValue: number(unit.temperature_entity),
+      temperatureUnit: (unit.temperature_entity && states[unit.temperature_entity] && states[unit.temperature_entity].attributes.unit_of_measurement) || "°C",
+      slots: unit.slots.map((slot) => {
+        const state = states[slot.entity_id];
+        const attributes = (state && state.attributes) || {};
+        const color = typeof attributes.color === "string" && /^#?[0-9a-f]{6}/i.test(attributes.color) ? `#${attributes.color.replace("#", "").slice(0, 6)}` : null;
+        const remain = Number(attributes.remain);
+        return {
+          ...slot,
+          known: !!state,
+          empty: !state || attributes.empty === true || state.state === "Empty" || state.state === "unavailable",
+          name: attributes.name || (state ? state.state : ""),
+          type: attributes.type || "",
+          color,
+          remain: Number.isFinite(remain) && remain >= 0 ? remain : null,
+          active: attributes.active === true,
+          spool: spools.find((spool) => spool.ams_slot === slot.entity_id) || null,
+        };
+      }),
+    }));
   }
 
   /**
@@ -401,6 +447,13 @@ class FilamentManagerCard extends HTMLElement {
              <span class="box-humidity-value">${humidityValue}</span>
            </span>`
         : "";
+    const temperature =
+      group.isBox && group.hasTemperature
+        ? `<span class="box-humidity" data-entity="${esc(group.temperature_sensor)}">
+             <ha-icon icon="mdi:thermometer"></ha-icon>
+             <span class="box-humidity-value">${group.temperatureValue !== null ? `${Math.round(group.temperatureValue)} ${esc(group.temperatureUnit)}` : "–"}</span>
+           </span>`
+        : "";
     const dots = collapsed
       ? `<div class="box-swatches">${group.spools.map((spool) => this._swatch(spool, "mini-")).join("")}</div>`
       : "";
@@ -419,12 +472,71 @@ class FilamentManagerCard extends HTMLElement {
         <ha-icon class="box-icon" icon="${group.icon}"></ha-icon>
         <span class="box-name">${esc(group.name)}${esc(limit)}</span>
         ${dots}
+        ${temperature}
         ${humidity}
         ${boxActions}
       </div>
       ${collapsed ? "" : group.spools.map((spool) => this._renderSpoolRow(spool, data, { indent: true, showBox })).join("")}
       ${!collapsed && !group.spools.length ? `<div class="empty-group">Keine Spulen</div>` : ""}
     `;
+  }
+
+  _rawSwatch(color, size = "") {
+    return `<span class="${size}swatch ${color ? "" : "transparent"}" style="${color ? `background:${color}` : ""}"></span>`;
+  }
+
+  /** One AMS unit: its humidity and temperature in the header, one row per slot. */
+  _renderAms(unit) {
+    const key = `ams:${unit.id}`;
+    const collapsed = this._isCollapsed(key);
+    const edit = this._editMode && this._canManage();
+    const climate = (icon, entityId, text) =>
+      entityId ? `<span class="box-humidity" data-entity="${esc(entityId)}"><ha-icon icon="${icon}"></ha-icon><span class="box-humidity-value">${text}</span></span>` : "";
+    const temperature = climate(
+      "mdi:thermometer",
+      unit.temperature_entity,
+      unit.temperatureValue !== null ? `${Math.round(unit.temperatureValue)} ${esc(unit.temperatureUnit)}` : "–"
+    );
+    const humidity = climate("mdi:water-percent", unit.humidity_entity, unit.humidityValue !== null ? `${Math.round(unit.humidityValue)}%` : "–");
+    const dots = collapsed ? `<div class="box-swatches">${unit.slots.filter((slot) => !slot.empty).map((slot) => this._rawSwatch(slot.color, "mini-")).join("")}</div>` : "";
+    const rows = unit.slots.map((slot) => this._renderAmsSlot(slot, edit)).join("");
+    return `
+      <div class="box-header" data-toggle-box="${esc(key)}" title="${collapsed ? "Slots anzeigen" : "Slots ausblenden"}">
+        <ha-icon class="box-toggle" icon="${collapsed ? "mdi:chevron-right" : "mdi:chevron-down"}"></ha-icon>
+        <ha-icon class="box-icon" icon="mdi:printer-3d-nozzle-outline"></ha-icon>
+        <span class="box-name">${esc(unit.name)}</span>
+        ${dots}${temperature}${humidity}
+      </div>
+      ${collapsed ? "" : rows}
+    `;
+  }
+
+  _renderAmsSlot(slot, edit) {
+    const spool = slot.spool;
+    const percent = spool ? spool.percent : slot.remain;
+    const tone = percentTone(percent);
+    const width = percent !== null && percent !== undefined ? Math.max(0, Math.min(100, percent)) : 0;
+    const name = slot.empty ? "Leer" : spool ? spool.name : slot.name || "Unbekannt";
+    const meta = [`Slot ${slot.number}`, !slot.empty && (spool ? this._materialLabel(spool) : slot.type)].filter(Boolean).join(" · ");
+    const actions = edit
+      ? this._actions(
+          ["assign-slot", "mdi:link-variant", "Spule aus dem Bestand zuordnen", slot.entity_id],
+          ...(spool ? [["unassign-slot", "mdi:link-variant-off", "Zuordnung aufheben", slot.entity_id]] : [])
+        )
+      : "";
+    const progress =
+      !slot.empty && percent !== null && percent !== undefined
+        ? `<div class="progress-col"><div class="track"><div class="fill" style="width:${width}%;background:${tone}"></div></div>
+             <span class="progress-sub" style="color:${tone}">${percent}%${spool ? ` · ${spool.remaining_weight} g` : ""}</span></div>`
+        : "";
+    return `
+      <div class="row boxed ${edit ? "edit" : ""} ${slot.empty ? "empty-slot" : ""}" data-entity="${esc(slot.entity_id)}">
+        ${slot.empty ? `<span class="swatch transparent"></span>` : this._rawSwatch(spool ? swatchFor(spool.color) : slot.color)}
+        <div class="info"><div class="name">${esc(name)}</div><div class="meta">${esc(meta)}</div></div>
+        ${slot.active ? `<ha-icon class="printer-badge" icon="mdi:printer-3d-nozzle" title="Wird gerade gedruckt"></ha-icon>` : ""}
+        ${progress}
+        ${actions}
+      </div>`;
   }
 
   _renderStock(stock) {
@@ -466,6 +578,7 @@ class FilamentManagerCard extends HTMLElement {
       const parts = [
         ...groups.map((group) => this._renderGroup(group, data)),
         ...loose.map((spool) => this._renderSpoolRow(spool, data, { showBox: true })),
+        ...(this._config.show_ams ? data.ams.map((unit) => this._renderAms(unit)) : []),
         ...(stock.length ? [this._renderStock(stock)] : []),
       ];
       body = parts.length
@@ -620,7 +733,7 @@ class FilamentManagerCard extends HTMLElement {
         }
         .box-humidity { display: flex; align-items: center; gap: 4px; font-size: 0.85em; flex: none; }
         .box-humidity ha-icon { --mdc-icon-size: 16px; }
-        .box-humidity-value { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+        .box-humidity-value { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
         .box-humidity.alert { color: var(--error-color, #db4437); }
         .swatch {
           width: 16px;
@@ -680,6 +793,7 @@ class FilamentManagerCard extends HTMLElement {
         .humidity-value.alert { color: var(--error-color, #db4437); }
         .empty { color: var(--secondary-text-color); padding: 8px 0; }
       
+        .row.empty-slot .name { color: var(--secondary-text-color); }
         .empty-group { color: var(--secondary-text-color); padding: 4px 0 8px 24px; font-size: 0.9em; }
         .sealed-badge { color: var(--secondary-text-color); font-size: 0.8em; border: 1px solid var(--divider-color); border-radius: 10px; padding: 1px 8px; flex: none; }
         .rows { container-type: inline-size; }
@@ -957,6 +1071,11 @@ class FilamentManagerCard extends HTMLElement {
           },
         ]
       );
+    } else if (kind === "assign-slot") {
+      this._dialogAssignSlot(id, data);
+    } else if (kind === "unassign-slot") {
+      const assigned = data.spools.find((item) => item.ams_slot === id);
+      if (assigned) this._call("unload_spool", { spool: assigned.id }).catch((err) => this._showModal("Nicht möglich", this._errorText(err), "", []));
     } else if (kind === "load" && spool) {
       this._dialogLoad(spool, data);
     } else if (kind === "add-spool") {
@@ -1051,6 +1170,28 @@ class FilamentManagerCard extends HTMLElement {
           },
         },
       ]
+    );
+  }
+
+  /** An AMS slot gets one of the spools from the boxes (its remaining amount is then tracked there). */
+  _dialogAssignSlot(slotId, data) {
+    const state = this._hass.states[slotId];
+    const label = (state && (state.attributes.friendly_name || slotId)) || slotId;
+    const options = data.spools
+      .filter((item) => !item.sealed)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((item) => {
+        const other = item.ams_slot && item.ams_slot !== slotId ? " (liegt in einem anderen Slot)" : "";
+        return `<option value="${esc(item.id)}" ${item.ams_slot === slotId ? "selected" : ""}>${esc(`${item.name} – ${this._materialLabel(item)}, ${item.color}${other}`)}</option>`;
+      })
+      .join("");
+    this._showModal(
+      "Spule dem Slot zuordnen",
+      options ? `${label}: Welche Spule steckt in diesem Slot? Die Spule, die bisher dort war, wird herausgenommen.` : "Es gibt keine geöffnete Spule in den Boxen.",
+      options ? `<label for="spool">Spule</label><select id="spool">${options}</select>` : "",
+      options
+        ? [{ label: "Zuordnen", busy: "Wird zugeordnet", kind: "primary", run: (m) => this._call("load_spool", { spool: m.querySelector("#spool").value, slot: slotId }) }]
+        : []
     );
   }
 
@@ -1267,6 +1408,17 @@ class FilamentManagerCard extends HTMLElement {
         return `<option value="${esc(entityId)}" ${box && box.humidity_sensor === entityId ? "selected" : ""}>${esc(name)}</option>`;
       })
       .join("");
+    const temperatures = Object.keys(hass.states).filter(
+      (entityId) => entityId.startsWith("sensor.") && hass.states[entityId].attributes.device_class === "temperature"
+    );
+    if (box && box.temperature_sensor && !temperatures.includes(box.temperature_sensor)) temperatures.push(box.temperature_sensor);
+    const temperatureOptions = temperatures
+      .sort()
+      .map((entityId) => {
+        const name = hass.states[entityId] ? hass.states[entityId].attributes.friendly_name || entityId : entityId;
+        return `<option value="${esc(entityId)}" ${box && box.temperature_sensor === entityId ? "selected" : ""}>${esc(name)}</option>`;
+      })
+      .join("");
     const number = (value) => (value === null || value === undefined ? "" : value);
     this._showModal(
       box ? "Box bearbeiten" : "Box anlegen",
@@ -1274,6 +1426,8 @@ class FilamentManagerCard extends HTMLElement {
       `<label for="name">Name</label><input id="name" autocomplete="off" value="${esc(box ? box.name : "")}" />
        <label for="sensor">Luftfeuchtigkeitssensor (optional)</label>
        <select id="sensor"><option value="">–</option>${sensorOptions}</select>
+       <label for="temperature">Temperatursensor (optional, nur zur Anzeige)</label>
+       <select id="temperature"><option value="">–</option>${temperatureOptions}</select>
        <label for="max">Maximale Luftfeuchtigkeit in % (leer = automatisch${box ? `, aktuell ${box.effective_humidity_max} %` : ""})</label>
        <input id="max" type="number" min="0" max="100" value="${esc(number(box && box.humidity_max))}" />
        <label for="delay">Warnen erst nach … Minuten (leer = automatisch${box ? `, aktuell ${box.effective_humidity_delay}` : ""})</label>
@@ -1292,6 +1446,7 @@ class FilamentManagerCard extends HTMLElement {
             const request = {
               name: value("name"),
               humidity_sensor: value("sensor"),
+              temperature_sensor: value("temperature"),
               humidity_max: value("max") === "" ? "" : Number(value("max")),
               humidity_delay: value("delay") === "" ? "" : Number(value("delay")),
               spool_limit: value("limit") === "" ? "" : Number(value("limit")),
@@ -1434,6 +1589,10 @@ class FilamentManagerCardEditor extends HTMLElement {
           <input id="show_stock" type="checkbox" />
           Vorrat (verschlossene Spulen) anzeigen
         </label>
+        <label class="option">
+          <input id="show_ams" type="checkbox" />
+          AMS-Einheiten mit ihren Slots anzeigen
+        </label>
         <label for="appearance" class="spaced">Darstellung</label>
         <select id="appearance">
           <option value="theme">Wie das Theme von Home Assistant (Standard)</option>
@@ -1455,6 +1614,9 @@ class FilamentManagerCardEditor extends HTMLElement {
     });
     this.shadowRoot.querySelector("#show_stock").addEventListener("change", (event) => {
       this._updateConfig("show_stock", event.target.checked ? undefined : false);
+    });
+    this.shadowRoot.querySelector("#show_ams").addEventListener("change", (event) => {
+      this._updateConfig("show_ams", event.target.checked || undefined);
     });
     this.shadowRoot.querySelector("#appearance").addEventListener("change", (event) => {
       const config = { ...this._config };
@@ -1478,6 +1640,7 @@ class FilamentManagerCardEditor extends HTMLElement {
     this.shadowRoot.querySelector("#appearance").value =
       this._config.appearance || (this._config.dark_background ? "dark" : "theme");
     this.shadowRoot.querySelector("#show_stock").checked = this._config.show_stock !== false;
+    this.shadowRoot.querySelector("#show_ams").checked = Boolean(this._config.show_ams);
     this.shadowRoot.querySelector("#group_by").value = ["material", "none"].includes(this._config.group_by)
       ? this._config.group_by
       : "box";

@@ -59,6 +59,7 @@ _ENTITY_LIST = vol.All(cv.ensure_list, [cv.entity_id])
 
 _BOX_SETTINGS = {
     vol.Optional(CONF_HUMIDITY_SENSOR): _OPTIONAL_ENTITY,
+    vol.Optional("temperature_sensor"): _OPTIONAL_ENTITY,
     vol.Optional(CONF_HUMIDITY_MAX): _OPTIONAL_NUMBER,
     vol.Optional(CONF_HUMIDITY_DELAY): _OPTIONAL_NUMBER,
     vol.Optional(CONF_SPOOL_LIMIT): vol.Any(None, "", vol.Coerce(int)),

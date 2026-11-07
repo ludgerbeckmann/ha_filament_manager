@@ -208,6 +208,7 @@ async def test_the_card_is_served_and_registered(hass: HomeAssistant, hass_clien
     body = await resp.text()
     assert 'customElements.define("filament-manager-card"' in body
     assert "/subscribe" in body and "show_stock" in body and "group_by" in body
+    assert "show_ams" in body and "temperature_sensor" in body
     assert "appearance" in body and "set_print_notification" in body and "test_print_notification" in body
 
 
@@ -227,3 +228,66 @@ async def test_a_variant_is_part_of_the_name_and_the_labels(hass: HomeAssistant)
 
     await call(hass, "update_spool", spool=spool.id, variant="")
     assert spool.variant == ""
+
+
+async def test_a_box_can_show_a_temperature_next_to_its_humidity(hass: HomeAssistant, hass_ws_client) -> None:
+    entry, runtime = await setup_inventory(hass)
+    await call(hass, "add_box", name=BOX, humidity_sensor="sensor.h", temperature_sensor="sensor.t")
+    (box,) = runtime.manager.boxes.values()
+    assert box.temperature_sensor == "sensor.t"
+    await call(hass, "update_box", box=box.id, temperature_sensor="")
+    assert box.temperature_sensor is None
+
+
+async def test_the_snapshot_lists_ams_units_and_printers(hass: HomeAssistant, hass_ws_client) -> None:
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    bambu = MockConfigEntry(domain="bambu_lab")
+    bambu.add_to_hass(hass)
+    dev_reg, ent_reg = dr.async_get(hass), er.async_get(hass)
+    ams = dev_reg.async_get_or_create(
+        config_entry_id=bambu.entry_id,
+        identifiers={("bambu_lab", "AMSSERIAL")},
+        name="P1S_01P09C482100602_AMS_1",
+        model="AMS 2 Pro",
+    )
+    prefix = "P1S_01P09C482100602_AMS_AMSSERIAL"
+    for key, entity_id in [(f"tray_{n}", f"sensor.p1s_ams_1_tray_{n}") for n in (2, 1)] + [
+        ("humidity", "sensor.p1s_ams_1_humidity"),
+        ("temperature", "sensor.p1s_ams_1_temperature"),
+    ]:
+        ent_reg.async_get_or_create(
+            "sensor", "bambu_lab", f"{prefix}_{key}", config_entry=bambu, device_id=ams.id,
+            suggested_object_id=entity_id.split(".", 1)[1],
+        )
+    printer = dev_reg.async_get_or_create(
+        config_entry_id=bambu.entry_id, identifiers={("bambu_lab", "01P09C482100602")}, name="P1S_01P09C482100602"
+    )
+    for key in ("print_status", "print_progress", "remaining_time", "nozzle_temp"):
+        ent_reg.async_get_or_create(
+            "sensor", "bambu_lab", f"01P09C482100602_{key}", config_entry=bambu, device_id=printer.id,
+            suggested_object_id=f"p1s_{key}",
+        )
+    ent_reg.async_get_or_create(
+        "image", "bambu_lab", "01P09C482100602_cover_image", config_entry=bambu, device_id=printer.id,
+        suggested_object_id="p1s_cover_image",
+    )
+    await setup_inventory(hass)
+
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": f"{DOMAIN}/subscribe"})
+    assert (await client.receive_json())["success"]
+    snapshot = (await client.receive_json())["event"]
+
+    (unit,) = snapshot["ams"]
+    assert (unit["name"], unit["model"], unit["index"]) == ("AMS 2 Pro", "AMS 2 Pro", 1)
+    assert [slot["number"] for slot in unit["slots"]] == [1, 2]
+    assert unit["humidity_entity"] == "sensor.p1s_ams_1_humidity"
+    assert unit["temperature_entity"] == "sensor.p1s_ams_1_temperature"
+
+    (found,) = snapshot["printers"]
+    assert (found["serial"], found["name"]) == ("01P09C482100602", "Bambu Lab P1S")
+    assert found["entities"]["print_progress"] == "sensor.p1s_print_progress"
+    assert found["entities"]["cover_image"] == "image.p1s_cover_image"
+    assert "bed_temp" not in found["entities"]  # only what exists

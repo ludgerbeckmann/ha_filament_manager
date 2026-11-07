@@ -15,8 +15,8 @@ schlanke, native Home-Assistant-Integration ohne externen Server.
   der mitgelieferten **Dashboard-Karte** verwaltet: Spulen anlegen, bearbeiten,
   in eine andere Box verschieben, in den Drucker laden, löschen.
 - Eine **Box** ist eine Filamentbox oder ein Regal. Sie kann einen
-  **Luftfeuchtigkeitssensor** (z. B. ein Hygrometer in der Trockenbox), eine
-  maximale Spulenanzahl haben.
+  **Luftfeuchtigkeitssensor** (z. B. ein Hygrometer in der Trockenbox), einen
+  **Temperatursensor** (nur zur Anzeige) und eine maximale Spulenanzahl haben.
 - Der **Vorrat** nimmt **verschlossene Rollen** auf (jede einzeln erfasst).
   Mit „Spule öffnen" wandert eine Rolle in eine Box und bekommt ihre
   Entitäten.
@@ -102,13 +102,15 @@ Das Stift-Symbol rechts im Kartenkopf schaltet den **Bearbeiten-Modus** ein
 - pro Spule in einer Box: **in den Drucker laden** bzw. herausnehmen (AMS-Slot
   zuordnen – ein Slot hat nur eine Spule, die bisherige wird herausgenommen),
   **in eine andere Box verschieben**, **bearbeiten** und **löschen**,
-- pro Box: **bearbeiten** (Name, Luftfeuchtigkeitssensor, Grenzwerte, maximale
-  Spulenanzahl) und – wenn sie leer ist – **löschen**,
+- pro Box: **bearbeiten** (Name, Luftfeuchtigkeits- und Temperatursensor,
+  Grenzwerte, maximale Spulenanzahl) und – wenn sie leer ist – **löschen**,
 - pro verschlossener Spule im Vorrat: **öffnen** (in eine Box legen),
   bearbeiten und löschen. **Gleiche Rollen** (Name, Hersteller, Material,
   Farbe, Durchmesser und Gewicht stimmen überein) stehen als eine Zeile
   `3 × …` da; mit **+** kommt eine weitere Rolle dazu, mit **−** wird eine
   entfernt, **öffnen** nimmt eine heraus,
+- pro AMS-Slot (wenn die AMS-Anzeige eingeschaltet ist, siehe unten): eine
+  Spule aus den Boxen **zuordnen** bzw. die Zuordnung **aufheben**,
 - die Knöpfe **Spule anlegen**, **Box anlegen**, **Warnungen** und **Druck-Benachrichtigung** (siehe unten).
   Beim **Anlegen** Beim Anlegen einer Spule
   wählst du die Ablage: eine Box oder **Vorrat (verschlossen)**. Material,
@@ -284,6 +286,9 @@ Manager den Fortschritt eines Drucks als **Live Activity auf iPhone und iPad**
   `noch 1 h 5 min` im Text. Auf Wunsch steht dahinter die **verwendete
   Spule** (aus dem aktiven AMS-Slot, wenn die Spule dort eingetragen ist),
   z. B. `· PETG Rot (82 %)`.
+- Der Fortschritt beginnt bei **0 %**: Behält der Drucker nach dem letzten
+  Druck noch die „100 %“ im Sensor, werden sie nicht in die erste
+  Benachrichtigung übernommen.
 - Am Ende wird die Live Activity entfernt und durch `✅ … Druck fertig` bzw.
   `❌ … Druck fehlgeschlagen` ersetzt. Geht der Drucker auf Leerlauf oder
   offline, verschwindet sie ebenfalls.
@@ -318,10 +323,12 @@ only_in_printer: true # optional: nur Spulen anzeigen, die im Drucker (AMS) stec
 show_stock: false     # optional: Vorrat ausblenden (Standard: sichtbar)
 collapse_boxes: true  # optional: Gruppen starten eingeklappt (Standard: false)
 appearance: dark      # optional: theme (Standard: wie Home Assistant) | light | dark | system
+show_ams: true        # optional: AMS-Einheiten mit ihren Slots anzeigen (Standard: aus)
 ```
 
 Die Spulen einer Box stehen unter einer Kopfzeile mit Boxname und
-Luftfeuchtigkeit; ein Klick auf die Kopfzeile klappt die Gruppe ein (dann
+Luftfeuchtigkeit und – wenn für die Box ein Temperatursensor eingetragen ist –
+Temperatur; ein Klick auf die Kopfzeile klappt die Gruppe ein (dann
 zeigt ein Farbpunkt je Spule den Inhalt). Pro Spule siehst du Name,
 Material/Farbe, Füllstandsbalken mit Prozent und Gramm und – wenn sie laut
 Kopplung mit Bambu Lab im Drucker steckt – ein Drucker-Symbol. Verschlossene
@@ -331,6 +338,12 @@ Spulen stehen im Bereich **Vorrat**.
   zeigt dann zusätzlich Box und Luftfeuchtigkeit), `none` zeigt eine flache
   Liste.
 - `only_in_printer` zeigt nur Spulen im Drucker (und blendet den Vorrat aus).
+- `show_ams: true` zeigt jede **AMS-Einheit** der Bambu-Lab-Integration als
+  eigene Gruppe (z. B. „AMS 2 Pro“) mit Temperatur und Luftfeuchtigkeit des
+  AMS in der Kopfzeile und einer Zeile je Slot: Farbe, Name, Füllstand, ein
+  Symbol für den gerade druckenden Slot und „Leer“ für leere Slots. Ist dem
+  Slot eine Spule aus deinen Boxen zugeordnet, erscheinen deren Name und
+  Restgewicht, sonst die Angaben des AMS.
 
 `appearance` legt die Darstellung fest: `theme` folgt dem Theme von Home
 Assistant (Standard), `light` ist immer hell, `dark` immer dunkel (wie die
