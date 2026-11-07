@@ -209,6 +209,7 @@ async def test_the_card_is_served_and_registered(hass: HomeAssistant, hass_clien
     assert 'customElements.define("filament-manager-card"' in body
     assert "/subscribe" in body and "show_stock" in body and "group_by" in body
     assert "show_ams" in body and "temperature_sensor" in body
+    assert 'customElements.define("filament-manager-print-card"' in body and "filament-manager-print-card-editor" in body
     assert "appearance" in body and "set_print_notification" in body and "test_print_notification" in body
 
 
@@ -291,3 +292,6 @@ async def test_the_snapshot_lists_ams_units_and_printers(hass: HomeAssistant, ha
     assert found["entities"]["print_progress"] == "sensor.p1s_print_progress"
     assert found["entities"]["cover_image"] == "image.p1s_cover_image"
     assert "bed_temp" not in found["entities"]  # only what exists
+
+    await client.send_json({"id": 2, "type": f"{DOMAIN}/printers"})
+    assert (await client.receive_json())["result"] == {"printers": [{"serial": "01P09C482100602", "name": "Bambu Lab P1S"}]}
