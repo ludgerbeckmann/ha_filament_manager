@@ -1697,6 +1697,30 @@ const PRINT_STATUS = {
 const PRINT_ACTIVE = ["running", "pause", "prepare", "slicing", "init"];
 const NO_VALUE = ["unknown", "unavailable", ""];
 
+/**
+ * The tiles of the "General" section: [key, label, icon, shown by default].
+ * What the Bambu Lab cards show anyway (the status, the speed) is off by default.
+ */
+const GENERAL_ITEMS = [
+  ["total_usage_hours", "Gesamtnutzung", "mdi:timer-sand", true],
+  ["timelapse", "Zeitraffer", "mdi:camera-timer", true],
+  ["nozzle_type", "Düsentyp", "mdi:printer-3d-nozzle", true],
+  ["nozzle_diameter", "Düsengröße", "mdi:arrow-left-right", true],
+  ["print_type", "Drucktyp", "mdi:file", true],
+  ["print_weight", "Gewicht des Drucks", "mdi:weight-gram", true],
+  ["print_status", "Druckstatus", "mdi:printer-3d", false],
+  ["speed_profile", "Geschwindigkeit", "mdi:speedometer", false],
+  ["wifi_signal", "WLAN-Signal", "mdi:wifi", false],
+  ["door_open", "Tür", "mdi:door", false],
+  ["firmware_update", "Firmware-Update", "mdi:update", false],
+];
+
+/** The general tiles a card shows: its `general` list, else the defaults. */
+function generalKeys(config) {
+  const chosen = config && Array.isArray(config.general) ? config.general : null;
+  return GENERAL_ITEMS.filter(([key, , , shown]) => (chosen ? chosen.includes(key) : shown)).map(([key]) => key);
+}
+
 /** "1 h 4 min" / "12 min". */
 function formatDuration(minutes) {
   const total = Math.round(minutes);
@@ -1880,20 +1904,9 @@ class FilamentManagerPrintCard extends HTMLElement {
       const unit = entity.attributes.unit_of_measurement;
       return unit ? `${entity.state} ${unit}` : entity.state;
     };
-    const general = [
-      ["mdi:timer-sand", "Gesamtnutzung", "total_usage_hours"],
-      ["mdi:camera-timer", "Zeitraffer", "timelapse"],
-      ["mdi:printer-3d-nozzle", "Düsentyp", "nozzle_type"],
-      ["mdi:arrow-left-right", "Düsengröße", "nozzle_diameter"],
-      ["mdi:printer-3d", "Druckstatus", "print_status"],
-      ["mdi:file", "Drucktyp", "print_type"],
-      ["mdi:weight-gram", "Gewicht", "print_weight"],
-      ["mdi:speedometer", "Geschwindigkeit", "speed_profile"],
-      ["mdi:wifi", "WLAN-Signal", "wifi_signal"],
-      ["mdi:door", "Tür", "door_open"],
-      ["mdi:update", "Firmware", "firmware_update"],
-    ]
-      .map(([icon, label, key]) => {
+    const wanted = generalKeys(config);
+    const general = GENERAL_ITEMS.filter(([key]) => wanted.includes(key))
+      .map(([key, label, icon]) => {
         const entity = state(key);
         return entity ? { icon, label, value: format(entity), entity: entities[key] } : null;
       })
@@ -1949,6 +1962,10 @@ class FilamentManagerPrintCard extends HTMLElement {
     const showTemperatures = config.show_temperatures !== false;
     const showFilament = config.show_filament !== false;
     const showCover = config.show_cover !== false;
+    const showJob = config.show_job !== false;
+    const showTimes = config.show_times !== false;
+    const showLayers = config.show_layers !== false;
+    const showStatus = config.show_status !== false;
 
     let body;
     if (this._error) {
@@ -1974,11 +1991,15 @@ class FilamentManagerPrintCard extends HTMLElement {
            </div>`
         : `<div class="idle">${view.status === "offline" ? "Der Drucker ist nicht erreichbar." : "Kein Druck aktiv."}</div>`;
       const tiles = [
-        this._tile("Verbleibend", view.remaining),
-        this._tile("Fertig um", view.end),
-        this._tile("Fertig seit", view.finishedAt),
-        this._tile("Gestartet", view.start),
-        this._tile("Schicht", view.layers),
+        ...(showTimes
+          ? [
+              this._tile("Verbleibend", view.remaining),
+              this._tile("Fertig um", view.end),
+              this._tile("Fertig seit", view.finishedAt),
+              this._tile("Gestartet", view.start),
+            ]
+          : []),
+        ...(showLayers ? [this._tile("Schicht", view.layers)] : []),
       ].join("");
       const temperatures =
         showTemperatures && view.temperatures.length
@@ -2006,12 +2027,12 @@ class FilamentManagerPrintCard extends HTMLElement {
                )
                .join("")}</div>`
           : "";
-      body = `${job}${tiles ? `<div class="tiles">${tiles}</div>` : ""}${filament}${temperatures}${general}`;
+      body = `${showJob ? job : ""}${tiles ? `<div class="tiles">${tiles}</div>` : ""}${filament}${temperatures}${general}`;
     }
 
     const title = config.title !== undefined && config.title !== "" ? config.title : view && !view.none ? view.name : "Drucker";
     const chip =
-      view && !view.none
+      view && !view.none && showStatus
         ? `<span class="chip" style="--chip:${view.statusColor}">${esc(view.statusText)}</span>`
         : "";
     const scheme = schemeOf(config);
@@ -2135,10 +2156,21 @@ class FilamentManagerPrintCardEditor extends HTMLElement {
         <input id="title" type="text" autocomplete="off" />
         <label for="printer" class="spaced">Drucker</label>
         <select id="printer"><option value="">Erster Drucker</option></select>
-        <label class="option"><input id="show_cover" type="checkbox" /> Vorschaubild des Auftrags anzeigen</label>
-        <label class="option"><input id="show_filament" type="checkbox" /> Verwendetes Filament anzeigen</label>
-        <label class="option"><input id="show_temperatures" type="checkbox" /> Temperaturen anzeigen</label>
-        <label class="option"><input id="show_general" type="checkbox" /> Allgemeine Daten anzeigen (Nutzung, Düse, Zeitraffer …)</label>
+        <label class="spaced">Anzeigen</label>
+        ${[
+          ["show_status", "Status oben rechts"],
+          ["show_job", "Auftrag mit Fortschrittsbalken"],
+          ["show_cover", "Vorschaubild des Auftrags"],
+          ["show_times", "Zeiten (verbleibend, fertig um, gestartet)"],
+          ["show_layers", "Schicht"],
+          ["show_filament", "Verwendetes Filament"],
+          ["show_temperatures", "Temperaturen"],
+          ["show_general", "Abschnitt „Allgemein“"],
+        ]
+          .map(([id, text]) => `<label class="option"><input id="${id}" data-flag type="checkbox" /> ${text}</label>`)
+          .join("")}
+        <label class="spaced">Werte im Abschnitt „Allgemein“</label>
+        ${GENERAL_ITEMS.map(([key, text]) => `<label class="option"><input data-general="${key}" type="checkbox" /> ${text}</label>`).join("")}
         <label for="appearance" class="spaced">Darstellung</label>
         <select id="appearance">
           <option value="theme">Wie das Theme von Home Assistant (Standard)</option>
@@ -2151,13 +2183,16 @@ class FilamentManagerPrintCardEditor extends HTMLElement {
     const root = this.shadowRoot;
     root.querySelector("#title").addEventListener("input", (event) => this._updateConfig("title", event.target.value || undefined));
     root.querySelector("#printer").addEventListener("change", (event) => this._updateConfig("printer", event.target.value || undefined));
-    root.querySelector("#show_cover").addEventListener("change", (event) => this._updateConfig("show_cover", event.target.checked ? undefined : false));
-    root.querySelector("#show_filament").addEventListener("change", (event) => this._updateConfig("show_filament", event.target.checked ? undefined : false));
-    root.querySelector("#show_temperatures").addEventListener("change", (event) =>
-      this._updateConfig("show_temperatures", event.target.checked ? undefined : false)
+    root.querySelectorAll("input[data-flag]").forEach((input) =>
+      input.addEventListener("change", (event) => this._updateConfig(input.id, event.target.checked ? undefined : false))
     );
-    root.querySelector("#show_general").addEventListener("change", (event) =>
-      this._updateConfig("show_general", event.target.checked ? undefined : false)
+    root.querySelectorAll("input[data-general]").forEach((input) =>
+      input.addEventListener("change", () => {
+        const keys = [...root.querySelectorAll("input[data-general]")].filter((box) => box.checked).map((box) => box.dataset.general);
+        const defaults = generalKeys({});
+        // Back to the defaults: the list is not needed in the config.
+        this._updateConfig("general", keys.length === defaults.length && keys.every((key) => defaults.includes(key)) ? undefined : keys);
+      })
     );
     root.querySelector("#appearance").addEventListener("change", (event) =>
       this._updateConfig("appearance", event.target.value === "theme" ? undefined : event.target.value)
@@ -2183,10 +2218,9 @@ class FilamentManagerPrintCardEditor extends HTMLElement {
     const desired = this._config.title || "";
     if (root.activeElement !== field && field.value !== desired) field.value = desired;
     root.querySelector("#printer").value = this._config.printer || "";
-    root.querySelector("#show_cover").checked = this._config.show_cover !== false;
-    root.querySelector("#show_filament").checked = this._config.show_filament !== false;
-    root.querySelector("#show_temperatures").checked = this._config.show_temperatures !== false;
-    root.querySelector("#show_general").checked = this._config.show_general !== false;
+    root.querySelectorAll("input[data-flag]").forEach((input) => (input.checked = this._config[input.id] !== false));
+    const wanted = generalKeys(this._config);
+    root.querySelectorAll("input[data-general]").forEach((input) => (input.checked = wanted.includes(input.dataset.general)));
     root.querySelector("#appearance").value = this._config.appearance || "theme";
   }
 
