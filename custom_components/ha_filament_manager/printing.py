@@ -96,7 +96,15 @@ PRINTER_SENSORS = (
     "bed_temp",
     "chamber_temp",
     "active_tray",
+    "total_usage_hours",
+    "nozzle_type",
+    "nozzle_diameter",
+    "print_type",
+    "speed_profile",
+    "wifi_signal",
 )
+# Binary sensors of the printer card's "general" section.
+PRINTER_BINARY_SENSORS = ("timelapse", "door_open", "firmware_update")
 
 
 def printer_entities(hass: HomeAssistant, serial: str) -> dict[str, str]:
@@ -105,6 +113,9 @@ def printer_entities(hass: HomeAssistant, serial: str) -> dict[str, str]:
     found: dict[str, str] = {}
     for key in PRINTER_SENSORS:
         if entity_id := registry.async_get_entity_id("sensor", BAMBULAB_DOMAIN, f"{serial}_{key}"):
+            found[key] = entity_id
+    for key in PRINTER_BINARY_SENSORS:
+        if entity_id := registry.async_get_entity_id("binary_sensor", BAMBULAB_DOMAIN, f"{serial}_{key}"):
             found[key] = entity_id
     if entity_id := registry.async_get_entity_id("image", BAMBULAB_DOMAIN, f"{serial}_cover_image"):
         found["cover_image"] = entity_id

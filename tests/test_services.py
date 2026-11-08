@@ -270,6 +270,15 @@ async def test_the_snapshot_lists_ams_units_and_printers(hass: HomeAssistant, ha
             "sensor", "bambu_lab", f"01P09C482100602_{key}", config_entry=bambu, device_id=printer.id,
             suggested_object_id=f"p1s_{key}",
         )
+    for key in ("total_usage_hours", "nozzle_type"):
+        ent_reg.async_get_or_create(
+            "sensor", "bambu_lab", f"01P09C482100602_{key}", config_entry=bambu, device_id=printer.id,
+            suggested_object_id=f"p1s_{key}",
+        )
+    ent_reg.async_get_or_create(
+        "binary_sensor", "bambu_lab", "01P09C482100602_timelapse", config_entry=bambu, device_id=printer.id,
+        suggested_object_id="p1s_timelapse",
+    )
     ent_reg.async_get_or_create(
         "image", "bambu_lab", "01P09C482100602_cover_image", config_entry=bambu, device_id=printer.id,
         suggested_object_id="p1s_cover_image",
@@ -291,7 +300,9 @@ async def test_the_snapshot_lists_ams_units_and_printers(hass: HomeAssistant, ha
     assert (found["serial"], found["name"]) == ("01P09C482100602", "Bambu Lab P1S")
     assert found["entities"]["print_progress"] == "sensor.p1s_print_progress"
     assert found["entities"]["cover_image"] == "image.p1s_cover_image"
-    assert "bed_temp" not in found["entities"]  # only what exists
+    assert found["entities"]["total_usage_hours"] == "sensor.p1s_total_usage_hours"
+    assert found["entities"]["timelapse"] == "binary_sensor.p1s_timelapse"
+    assert "bed_temp" not in found["entities"] and "door_open" not in found["entities"]  # only what exists
 
     await client.send_json({"id": 2, "type": f"{DOMAIN}/printers"})
     assert (await client.receive_json())["result"] == {"printers": [{"serial": "01P09C482100602", "name": "Bambu Lab P1S"}]}

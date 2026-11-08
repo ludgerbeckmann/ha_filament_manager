@@ -1867,10 +1867,41 @@ class FilamentManagerPrintCard extends HTMLElement {
       };
     }
 
+    // "General" section: what does not depend on the current job. The frontend
+    // translates enum states (print type, nozzle type, ...) and adds the unit.
+    const format = (entity) => {
+      if (this._hass.formatEntityState) {
+        try {
+          return this._hass.formatEntityState(entity);
+        } catch (err) {
+          /* fall through to the plain state */
+        }
+      }
+      const unit = entity.attributes.unit_of_measurement;
+      return unit ? `${entity.state} ${unit}` : entity.state;
+    };
+    const general = [
+      ["mdi:timer-sand", "Gesamtnutzung", "total_usage_hours"],
+      ["mdi:camera-timer", "Zeitraffer", "timelapse"],
+      ["mdi:printer-3d-nozzle", "Düsentyp", "nozzle_type"],
+      ["mdi:arrow-left-right", "Düsengröße", "nozzle_diameter"],
+      ["mdi:printer-3d", "Druckstatus", "print_status"],
+      ["mdi:file", "Drucktyp", "print_type"],
+      ["mdi:weight-gram", "Gewicht", "print_weight"],
+      ["mdi:speedometer", "Geschwindigkeit", "speed_profile"],
+      ["mdi:wifi", "WLAN-Signal", "wifi_signal"],
+      ["mdi:door", "Tür", "door_open"],
+      ["mdi:update", "Firmware", "firmware_update"],
+    ]
+      .map(([icon, label, key]) => {
+        const entity = state(key);
+        return entity ? { icon, label, value: format(entity), entity: entities[key] } : null;
+      })
+      .filter(Boolean);
+
     const cover = entities.cover_image && states[entities.cover_image];
     const layer = number("current_layer");
     const layers = number("total_layers");
-    const weight = number("print_weight");
     return {
       none: false,
       name: printer.name,
@@ -1887,13 +1918,13 @@ class FilamentManagerPrintCard extends HTMLElement {
       start: showJob && start ? this._formatTime(start) : "",
       finishedAt: !active && showJob && end ? this._formatTime(end) : "",
       layers: showJob && layer !== null && layers ? `${layer} / ${layers}` : "",
-      weight: showJob && weight ? `${Math.round(weight)} g` : "",
       temperatures: [
         ["mdi:printer-3d-nozzle-heat-outline", "Düse", temperature("nozzle_temp")],
         ["mdi:radiator", "Bett", temperature("bed_temp")],
         ["mdi:thermometer", "Kammer", temperature("chamber_temp")],
       ].filter((item) => item[2]),
       filament,
+      general,
     };
   }
 
@@ -1948,7 +1979,6 @@ class FilamentManagerPrintCard extends HTMLElement {
         this._tile("Fertig seit", view.finishedAt),
         this._tile("Gestartet", view.start),
         this._tile("Schicht", view.layers),
-        this._tile("Gewicht", view.weight),
       ].join("");
       const temperatures =
         showTemperatures && view.temperatures.length
@@ -1964,7 +1994,19 @@ class FilamentManagerPrintCard extends HTMLElement {
                <span class="filament-detail">${esc(view.filament.detail)}</span>
              </div>`
           : "";
-      body = `${job}${tiles ? `<div class="tiles">${tiles}</div>` : ""}${filament}${temperatures}`;
+      const general =
+        config.show_general !== false && view.general.length
+          ? `<div class="section">Allgemein</div>
+             <div class="general">${view.general
+               .map(
+                 (item) => `<div class="info-tile" data-entity="${esc(item.entity)}">
+                   <ha-icon icon="${item.icon}"></ha-icon>
+                   <div class="info-text"><div class="info-label">${esc(item.label)}</div><div class="info-value">${esc(item.value)}</div></div>
+                 </div>`
+               )
+               .join("")}</div>`
+          : "";
+      body = `${job}${tiles ? `<div class="tiles">${tiles}</div>` : ""}${filament}${temperatures}${general}`;
     }
 
     const title = config.title !== undefined && config.title !== "" ? config.title : view && !view.none ? view.name : "Drucker";
@@ -2012,6 +2054,16 @@ class FilamentManagerPrintCard extends HTMLElement {
         .temp { display: inline-flex; align-items: center; gap: 4px; }
         .temp ha-icon { --mdc-icon-size: 18px; }
         .temp b { color: var(--primary-text-color); font-weight: 500; font-variant-numeric: tabular-nums; }
+        .section { margin: 16px 0 8px; font-weight: 500; color: var(--secondary-text-color); }
+        .general { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+        .info-tile {
+          display: flex; align-items: center; gap: 12px; min-width: 0; padding: 10px 12px; cursor: pointer;
+          border: 1px solid var(--divider-color); border-radius: 12px;
+        }
+        .info-tile ha-icon { --mdc-icon-size: 24px; flex: none; color: var(--primary-color); }
+        .info-text { min-width: 0; }
+        .info-label { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .info-value { color: var(--secondary-text-color); font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .idle, .empty { color: var(--secondary-text-color); padding: 4px 0; }
       </style>
       <ha-card class="${scheme ? `scheme-${scheme}` : ""}">
@@ -2086,6 +2138,7 @@ class FilamentManagerPrintCardEditor extends HTMLElement {
         <label class="option"><input id="show_cover" type="checkbox" /> Vorschaubild des Auftrags anzeigen</label>
         <label class="option"><input id="show_filament" type="checkbox" /> Verwendetes Filament anzeigen</label>
         <label class="option"><input id="show_temperatures" type="checkbox" /> Temperaturen anzeigen</label>
+        <label class="option"><input id="show_general" type="checkbox" /> Allgemeine Daten anzeigen (Nutzung, Düse, Zeitraffer …)</label>
         <label for="appearance" class="spaced">Darstellung</label>
         <select id="appearance">
           <option value="theme">Wie das Theme von Home Assistant (Standard)</option>
@@ -2102,6 +2155,9 @@ class FilamentManagerPrintCardEditor extends HTMLElement {
     root.querySelector("#show_filament").addEventListener("change", (event) => this._updateConfig("show_filament", event.target.checked ? undefined : false));
     root.querySelector("#show_temperatures").addEventListener("change", (event) =>
       this._updateConfig("show_temperatures", event.target.checked ? undefined : false)
+    );
+    root.querySelector("#show_general").addEventListener("change", (event) =>
+      this._updateConfig("show_general", event.target.checked ? undefined : false)
     );
     root.querySelector("#appearance").addEventListener("change", (event) =>
       this._updateConfig("appearance", event.target.value === "theme" ? undefined : event.target.value)
@@ -2130,6 +2186,7 @@ class FilamentManagerPrintCardEditor extends HTMLElement {
     root.querySelector("#show_cover").checked = this._config.show_cover !== false;
     root.querySelector("#show_filament").checked = this._config.show_filament !== false;
     root.querySelector("#show_temperatures").checked = this._config.show_temperatures !== false;
+    root.querySelector("#show_general").checked = this._config.show_general !== false;
     root.querySelector("#appearance").value = this._config.appearance || "theme";
   }
 
