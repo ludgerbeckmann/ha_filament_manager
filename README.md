@@ -361,30 +361,42 @@ Bambu-Lab-Drucker gerade tut – ähnlich wie die Auftragsansicht der Bambu-App:
 type: custom:filament-manager-print-card
 printer: 01P09C482100602   # optional: Seriennummer, sonst der erste Drucker
 title: Mein P1S            # optional, sonst der Name des Druckers
+show_status: true          # optional: Status oben rechts (Standard: an)
+show_job: true             # optional: Auftrag mit Fortschrittsbalken (Standard: an)
 show_cover: true           # optional: Vorschaubild des Auftrags (Standard: an)
+show_times: true           # optional: verbleibend, fertig um, gestartet (Standard: an)
+show_layers: true          # optional: Schicht (Standard: an)
 show_filament: true        # optional: verwendetes Filament (Standard: an)
 show_temperatures: true    # optional: Düse, Bett, Kammer (Standard: an)
 show_general: true         # optional: Abschnitt „Allgemein“ (Standard: an)
+general:                   # optional: welche Kacheln der Abschnitt „Allgemein“ zeigt
+  - total_usage_hours
+  - nozzle_type
 appearance: dark           # optional: theme | light | dark | system
 ```
 
 Oben stehen der Druckername und ein **Status** (Druckt, Pausiert, Vorbereitung,
 Fertig, Fehlgeschlagen, Bereit, Offline). Während eines Drucks folgen
 Auftragsname mit Vorschaubild und Fortschrittsbalken, **Verbleibend**, **Fertig
-um**, **Gestartet**, **Schicht** (aktuell/gesamt) und **Gewicht**, das gerade
+um**, **Gestartet** und **Schicht** (aktuell/gesamt), das gerade
 verwendete **Filament** (bei einer zugeordneten Spule mit Name und Restmenge
 aus dem Bestand) sowie die **Temperaturen**. Ein Klick auf den Kopf öffnet den
 Status-Sensor, ein Klick auf das Filament den AMS-Slot.
 
+Jeder Block lässt sich einzeln abschalten – praktisch, wenn du daneben schon
+die Karten der Bambu-Lab-Integration hast, die z. B. Temperaturen und Status
+zeigen. Alle Schalter gibt es auch im visuellen Editor.
+
 Der Abschnitt **Allgemein** zeigt, was nicht vom aktuellen Auftrag abhängt, als
-Kacheln: Gesamtnutzung, Zeitraffer, Düsentyp, Düsengröße, Druckstatus,
-Drucktyp, Gewicht, Geschwindigkeit, WLAN-Signal und – falls der Drucker sie
-hat – Tür und Firmware-Update. Es erscheinen nur Werte, die die
+Kacheln. Standardmäßig sind das Gesamtnutzung, Zeitraffer, Düsentyp,
+Düsengröße, Drucktyp und das Gewicht des Drucks. Mit `general:` (oder den
+Häkchen im Editor) wählst du die Kacheln aus; zusätzlich gibt es
+`print_status`, `speed_profile`, `wifi_signal`, `door_open` (Tür) und
+`firmware_update`. Es erscheinen nur Werte, die die
 Bambu-Lab-Integration tatsächlich liefert; Texte wie „Edelstahl“ oder
 „Leerlauf“ übersetzt Home Assistant. Ein Klick auf eine Kachel öffnet die
 zugehörige Entität. Die Karte braucht die
-Bambu-Lab-Integration (ha-bambulab) und liest deren Sensoren; alle Optionen
-gibt es auch im visuellen Editor.
+Bambu-Lab-Integration (ha-bambulab) und liest deren Sensoren.
 
 ### Einzelne Spule als Entitäten-Karte
 
