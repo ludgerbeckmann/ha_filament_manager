@@ -1854,7 +1854,9 @@ class FilamentManagerPrintCard extends HTMLElement {
       return `${Math.round(value)} ${(states[entities[key]].attributes.unit_of_measurement) || "°C"}`;
     };
 
-    const status = (state("print_status") || { state: "unknown" }).state;
+    // A printer that is switched off makes its sensors "unavailable": that is "offline", not "unknown".
+    const rawStatus = entities.print_status ? states[entities.print_status] : undefined;
+    const status = rawStatus ? (rawStatus.state === "unavailable" ? "offline" : NO_VALUE.includes(rawStatus.state) ? "unknown" : rawStatus.state) : "unknown";
     const [statusText, statusColor] = PRINT_STATUS[status] || [status === "unknown" ? "Unbekannt" : status, "#9e9e9e"];
     const active = PRINT_ACTIVE.includes(status);
     const showJob = active || status === "finish" || status === "failed";
