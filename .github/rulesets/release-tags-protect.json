@@ -1,0 +1,9 @@
+{
+  "name": "Protect release tags",
+  "target": "tag",
+  "source_type": "Repository",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "exclude": [], "include": ["refs/tags/v*"] } },
+  "rules": [ { "type": "deletion" }, { "type": "non_fast_forward" }, { "type": "update" } ],
+  "bypass_actors": []
+}
